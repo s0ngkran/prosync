@@ -321,7 +321,15 @@
 				<p class="text-xs text-gray-500 mb-2">คอลัมน์ที่รองรับ:</p>
 				<p class="text-xs text-gray-600 font-mono">ชื่อบทบาท*, สิทธิ์</p>
 				<p class="text-xs text-gray-400 mt-1">* = จำเป็น | คอลัมน์สิทธิ์ใส่ชื่อสิทธิ์คั่นด้วย , เช่น "จัดการผู้ใช้งาน, ดูแผนงาน"</p>
-				<button type="button" onclick={() => downloadCsvTemplate('roles', ['ชื่อบทบาท', 'สิทธิ์'])} class="mt-2 text-xs text-blue-600 hover:underline cursor-pointer">
+				<button type="button" onclick={() => downloadCsvTemplate('roles',
+					['ชื่อบทบาท', 'สิทธิ์'],
+					[
+						['เจ้าหน้าที่พัสดุ', 'ดูเอกสารจัดซื้อ, สร้างเอกสารจัดซื้อ'],
+						['หัวหน้าฝ่ายการเงิน', 'ดูฎีกาเบิกจ่าย, สร้างฎีกาเบิกจ่าย, อนุมัติฎีกาเบิกจ่าย'],
+						['ผู้ดูแลระบบ', 'จัดการผู้ใช้งาน, จัดการโครงสร้างองค์กร, ดูประวัติการเปลี่ยนแปลง'],
+						['เจ้าหน้าที่แผนงาน', 'ดูแผนงาน, สร้างแผน, แก้ไขแผน'],
+					]
+				)} class="mt-2 text-xs text-blue-600 hover:underline cursor-pointer">
 					ดาวน์โหลด Template CSV
 				</button>
 			</div>

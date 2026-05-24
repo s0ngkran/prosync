@@ -287,7 +287,16 @@
 				<p style="margin: 0 0 6px; font-size: 0.75rem; color: oklch(0.5 0.02 180);">คอลัมน์ที่รองรับ:</p>
 				<p style="margin: 0; font-size: 0.75rem; font-family: monospace; color: oklch(0.35 0.02 180);">ชื่อแผนก*, รหัสหน่วยงาน*, รหัสแผนกแม่, รหัสหัวหน้า</p>
 				<p style="margin: 4px 0 0; font-size: 0.6875rem; color: oklch(0.6 0.02 180);">* = จำเป็น | แผนกที่ซ้ำในระดับเดียวกันจะถูกข้าม</p>
-				<button type="button" onclick={() => downloadCsvTemplate('org-structure', ['ชื่อแผนก', 'รหัสหน่วยงาน', 'รหัสแผนกแม่', 'รหัสหัวหน้า'])} style="margin-top: 8px; font-size: 0.75rem; color: oklch(0.42 0.12 240); background: none; border: none; cursor: pointer; text-decoration: underline;">
+				<button type="button" onclick={() => downloadCsvTemplate('org-structure',
+					['ชื่อแผนก', 'รหัสหน่วยงาน', 'รหัสแผนกแม่', 'รหัสหัวหน้า'],
+					[
+						['กองคลัง', '1', '', ''],
+						['กองช่าง', '1', '', '3'],
+						['กองพัสดุ', '1', '', ''],
+						['พัสดุการแพทย์', '1', '3', '5'],
+						['พัสดุทั่วไป', '1', '3', ''],
+					]
+				)} style="margin-top: 8px; font-size: 0.75rem; color: oklch(0.42 0.12 240); background: none; border: none; cursor: pointer; text-decoration: underline;">
 					ดาวน์โหลด Template CSV
 				</button>
 			</div>

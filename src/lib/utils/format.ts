@@ -121,10 +121,14 @@ export function parseCsv(text: string): Record<string, string>[] {
 	});
 }
 
-/** ดาวน์โหลด CSV template สำหรับ import */
-export function downloadCsvTemplate(filename: string, headers: string[]): void {
+/** ดาวน์โหลด CSV template สำหรับ import พร้อมตัวอย่าง */
+export function downloadCsvTemplate(filename: string, headers: string[], exampleRows: string[][] = []): void {
 	const BOM = '\uFEFF';
-	const csv = BOM + headers.map((h) => `"${h}"`).join(',');
+	const headerRow = headers.map((h) => `"${h}"`).join(',');
+	const dataRows = exampleRows.map((row) =>
+		row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')
+	);
+	const csv = BOM + [headerRow, ...dataRows].join('\n');
 	const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
 	const url = URL.createObjectURL(blob);
 	const link = document.createElement('a');
