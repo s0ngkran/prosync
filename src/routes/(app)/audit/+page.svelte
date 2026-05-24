@@ -85,15 +85,23 @@
 
 	function switchCollection(col: string) {
 		currentPage = 1;
-		goto(buildUrl({ collection: col, province_id: data.selectedProvinceId, agency_id: data.selectedAgencyId }));
+		goto(buildUrl({ collection: col }));
 	}
 
-	function onProvinceChange(val: string) {
-		goto(buildUrl({ collection: data.collection, province_id: val || null, agency_id: null }));
+	async function onProvinceChange(val: string) {
+		const form = new FormData();
+		form.set('province_id', val || '');
+		form.set('agency_id', '');
+		await fetch('/org-management?/selectScope', { method: 'POST', body: form });
+		location.reload();
 	}
 
-	function onAgencyChange(val: string) {
-		goto(buildUrl({ collection: data.collection, province_id: data.selectedProvinceId, agency_id: val || null }));
+	async function onAgencyChange(val: string) {
+		const form = new FormData();
+		form.set('province_id', String(data.selectedProvinceId || ''));
+		form.set('agency_id', val || '');
+		await fetch('/org-management?/selectScope', { method: 'POST', body: form });
+		location.reload();
 	}
 
 	function handleExportCsv() {
