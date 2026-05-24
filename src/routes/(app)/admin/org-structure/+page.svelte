@@ -13,10 +13,10 @@
 
 	function handleExportCsv() {
 		exportToCsv('org-structure', [
-			{ key: 'id', label: 'ID' },
+			{ key: 'id', label: 'รหัส' },
 			{ key: 'name', label: 'ชื่อแผนก' },
-			{ key: 'agency_id', label: 'หน่วยงาน_id' },
-			{ key: 'parent_id', label: 'แผนกแม่_id' },
+			{ key: 'agency_id', label: 'รหัสหน่วยงาน' },
+			{ key: 'parent_id', label: 'รหัสแผนกแม่' },
 			{ key: 'head_name', label: 'หัวหน้า' }
 		], data.units);
 	}
@@ -285,9 +285,9 @@
 
 			<div style="margin-top: 12px; padding: 14px; border-radius: 10px; border: 1px dashed oklch(0.82 0.015 180); background: oklch(0.98 0.005 180);">
 				<p style="margin: 0 0 6px; font-size: 0.75rem; color: oklch(0.5 0.02 180);">คอลัมน์ที่รองรับ:</p>
-				<p style="margin: 0; font-size: 0.75rem; font-family: monospace; color: oklch(0.35 0.02 180);">ชื่อแผนก*, หน่วยงาน_id*, แผนกแม่_id, หัวหน้า_id</p>
+				<p style="margin: 0; font-size: 0.75rem; font-family: monospace; color: oklch(0.35 0.02 180);">ชื่อแผนก*, รหัสหน่วยงาน*, รหัสแผนกแม่, รหัสหัวหน้า</p>
 				<p style="margin: 4px 0 0; font-size: 0.6875rem; color: oklch(0.6 0.02 180);">* = จำเป็น | แผนกที่ซ้ำในระดับเดียวกันจะถูกข้าม</p>
-				<button type="button" onclick={() => downloadCsvTemplate('org-structure', ['ชื่อแผนก', 'หน่วยงาน_id', 'แผนกแม่_id', 'หัวหน้า_id'])} style="margin-top: 8px; font-size: 0.75rem; color: oklch(0.42 0.12 240); background: none; border: none; cursor: pointer; text-decoration: underline;">
+				<button type="button" onclick={() => downloadCsvTemplate('org-structure', ['ชื่อแผนก', 'รหัสหน่วยงาน', 'รหัสแผนกแม่', 'รหัสหัวหน้า'])} style="margin-top: 8px; font-size: 0.75rem; color: oklch(0.42 0.12 240); background: none; border: none; cursor: pointer; text-decoration: underline;">
 					ดาวน์โหลด Template CSV
 				</button>
 			</div>

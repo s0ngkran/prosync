@@ -425,10 +425,10 @@
 			<p class="mt-1 text-sm text-gray-500">อัปโหลดไฟล์ CSV ที่มีข้อมูลผู้ใช้งาน</p>
 
 			<div class="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-				<p class="text-xs text-gray-500 mb-2">คอลัมน์ที่รองรับ (header ภาษาไทย):</p>
-				<p class="text-xs text-gray-600 font-mono">ชื่อ-สกุล*, เลขบัตรประชาชน*, รหัสผ่าน, คำนำหน้า, ยศ/คำนำหน้า, ระดับตำแหน่ง, อีเมล, เบอร์โทร, วันเกิด, วันบรรจุ, หน่วยงาน_id, ประเภทบรรจุ_id, แผนก_id</p>
+				<p class="text-xs text-gray-500 mb-2">คอลัมน์ที่รองรับ:</p>
+				<p class="text-xs text-gray-600 font-mono">ชื่อ-สกุล*, เลขบัตรประชาชน*, รหัสผ่าน, คำนำหน้า, ตำแหน่ง, ระดับตำแหน่ง, อีเมล, เบอร์โทร, วันเกิด, วันบรรจุ, รหัสหน่วยงาน, รหัสประเภทบรรจุ, รหัสแผนก</p>
 				<p class="text-xs text-gray-400 mt-1">* = จำเป็น | ถ้าไม่ระบุรหัสผ่าน จะใช้ 6 หลักสุดท้ายของเลขบัตร</p>
-				<button type="button" onclick={() => downloadCsvTemplate('users', ['ชื่อ-สกุล', 'เลขบัตรประชาชน', 'รหัสผ่าน', 'คำนำหน้า', 'ยศ/คำนำหน้า', 'ระดับตำแหน่ง', 'อีเมล', 'เบอร์โทร', 'วันเกิด', 'วันบรรจุ', 'หน่วยงาน_id', 'ประเภทบรรจุ_id', 'แผนก_id'])} class="mt-2 text-xs text-blue-600 hover:underline cursor-pointer">
+				<button type="button" onclick={() => downloadCsvTemplate('users', ['ชื่อ-สกุล', 'เลขบัตรประชาชน', 'รหัสผ่าน', 'คำนำหน้า', 'ตำแหน่ง', 'ระดับตำแหน่ง', 'อีเมล', 'เบอร์โทร', 'วันเกิด', 'วันบรรจุ', 'รหัสหน่วยงาน', 'รหัสประเภทบรรจุ', 'รหัสแผนก'])} class="mt-2 text-xs text-blue-600 hover:underline cursor-pointer">
 					ดาวน์โหลด Template CSV
 				</button>
 			</div>

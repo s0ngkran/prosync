@@ -175,14 +175,14 @@ export const actions: Actions = {
 			for (let i = 0; i < rows.length; i++) {
 				const row = rows[i];
 				const name = row['ชื่อแผนก']?.trim();
-				const agency_id = row['หน่วยงาน_id'] ? Number(row['หน่วยงาน_id']) : null;
+				const agency_id = row['รหัสหน่วยงาน'] ? Number(row['รหัสหน่วยงาน']) : null;
 
 				if (!name || !agency_id) {
 					skipped++;
 					continue;
 				}
 
-				const parent_id = row['แผนกแม่_id'] ? Number(row['แผนกแม่_id']) : null;
+				const parent_id = row['รหัสแผนกแม่'] ? Number(row['รหัสแผนกแม่']) : null;
 
 				// Check duplicate name within same level
 				const parentCondition = parent_id
@@ -203,7 +203,7 @@ export const actions: Actions = {
 					name,
 					agency_id,
 					parent_id,
-					head_of_unit_id: row['หัวหน้า_id'] ? Number(row['หัวหน้า_id']) : null
+					head_of_unit_id: row['รหัสหัวหน้า'] ? Number(row['รหัสหัวหน้า']) : null
 				});
 
 				created++;
