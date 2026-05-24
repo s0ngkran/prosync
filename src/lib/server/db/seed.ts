@@ -988,7 +988,23 @@ async function seed() {
 	}
 
 	// ──────────────────────────────────────────
-	// 13. Vendors (idempotent)
+	// 13a. Vendor Types (idempotent)
+	// ──────────────────────────────────────────
+	let vendorTypeList = await db.select().from(schema.vendorTypes);
+	if (vendorTypeList.length === 0) {
+		vendorTypeList = await db.insert(schema.vendorTypes).values([
+			{ name: 'นิติบุคคล' },
+			{ name: 'บุคคลธรรมดา' },
+			{ name: 'ห้างหุ้นส่วนจำกัด' },
+			{ name: 'บริษัทมหาชน' }
+		]).returning();
+		console.log('✅ Vendor Types seeded');
+	}
+
+	const vtMap = Object.fromEntries(vendorTypeList.map((v) => [v.name, v.id]));
+
+	// ──────────────────────────────────────────
+	// 13b. Vendors (idempotent)
 	// ──────────────────────────────────────────
 	let vendors = await db.select().from(schema.vendors);
 	if (vendors.length === 0) {
@@ -1002,17 +1018,22 @@ async function seed() {
 			'บริษัท วัสดุสำนักงานไทย จำกัด',
 			'ร้าน เฟอร์นิเจอร์คุณภาพ'
 		];
+		const typeNames = ['นิติบุคคล', 'บุคคลธรรมดา'];
 		vendors = await db
 			.insert(schema.vendors)
 			.values(
-				vendorNames.map((name, i) => ({
-					vendor_type: i % 2 === 0 ? 'นิติบุคคล' : 'บุคคลธรรมดา',
-					tax_id: `${String(1000000000000 + i).padStart(13, '0')}`,
-					company_name: name,
-					contact_person: `ผู้ติดต่อ ${i + 1}`,
-					contact_email: `vendor${i + 1}@example.com`,
-					contact_phone: `02${randomInt(1000000, 9999999)}`
-				}))
+				vendorNames.map((name, i) => {
+					const typeName = typeNames[i % 2];
+					return {
+						vendor_type_id: vtMap[typeName],
+						vendor_type: typeName,
+						tax_id: `${String(1000000000000 + i).padStart(13, '0')}`,
+						company_name: name,
+						contact_person: `ผู้ติดต่อ ${i + 1}`,
+						contact_email: `vendor${i + 1}@example.com`,
+						contact_phone: `02${randomInt(1000000, 9999999)}`
+					};
+				})
 			)
 			.returning();
 		console.log(`✅ Vendors seeded (${vendors.length} vendors)`);

@@ -5,6 +5,7 @@
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
 	import { STEP_TYPES, STEP_TYPE_LABELS, COMMITTEE_TYPES, COMMITTEE_LABELS, inferStepType, getStepConfigSummary, type StepType } from '$lib/types/workflow';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
+	import { swalConfirmDelete } from '$lib/utils/swal';
 	import { decrementProcurement } from '$lib/stores/taskCounts.svelte';
 
 	let { data, form: formResult } = $props();
@@ -246,7 +247,7 @@
 								<button onclick={() => openStepModal(wf.id)} class="act-btn add">+ ขั้นตอน</button>
 								<form method="POST" action="?/deleteWorkflow" use:enhance class="inline-form">
 									<input type="hidden" name="id" value={wf.id} />
-									<button type="submit" onclick={(e) => { if (!confirm(`ลบ "${wf.name}"?`)) e.preventDefault(); }} class="act-btn del">ลบ</button>
+									<button type="submit" onclick={(e) => swalConfirmDelete(e, wf.name)} class="act-btn del">ลบ</button>
 								</form>
 							</div>
 						{/if}
@@ -314,7 +315,7 @@
 														{#if canEdit}
 															<form method="POST" action="?/deleteStep" use:enhance class="inline-form" onclick={(e) => e.stopPropagation()}>
 																<input type="hidden" name="id" value={step.id} />
-																<button type="submit" onclick={(e) => { if (!confirm('ลบขั้นตอนนี้?')) e.preventDefault(); }} class="step-del">
+																<button type="submit" onclick={(e) => swalConfirmDelete(e)} class="step-del">
 																	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
 																</button>
 															</form>
@@ -382,7 +383,7 @@
 									<button onclick={() => openStepModal(wf.id)} class="act-btn add">+ ขั้นตอน</button>
 									<form method="POST" action="?/deleteWorkflow" use:enhance class="inline-form">
 										<input type="hidden" name="id" value={wf.id} />
-										<button type="submit" onclick={(e) => { if (!confirm(`ลบ "${wf.name}"?`)) e.preventDefault(); }} class="act-btn del">ลบ</button>
+										<button type="submit" onclick={(e) => swalConfirmDelete(e, wf.name)} class="act-btn del">ลบ</button>
 									</form>
 								</div>
 							</div>
@@ -428,7 +429,7 @@
 								<button onclick={() => openStepModal(wf.id)} class="act-btn add">+ ขั้นตอน</button>
 								<form method="POST" action="?/deleteWorkflow" use:enhance class="inline-form">
 									<input type="hidden" name="id" value={wf.id} />
-									<button type="submit" onclick={(e) => { if (!confirm(`ลบ "${wf.name}"?`)) e.preventDefault(); }} class="act-btn del">ลบ</button>
+									<button type="submit" onclick={(e) => swalConfirmDelete(e, wf.name)} class="act-btn del">ลบ</button>
 								</form>
 							</div>
 						</div>
@@ -507,7 +508,7 @@
 									{#if canEdit}
 										<form method="POST" action="?/deleteStep" use:enhance class="inline-form" onclick={(e) => e.stopPropagation()}>
 											<input type="hidden" name="id" value={step.id} />
-											<button type="submit" onclick={(e) => { if (!confirm('ลบขั้นตอนนี้?')) e.preventDefault(); }} class="step-del">
+											<button type="submit" onclick={(e) => swalConfirmDelete(e)} class="step-del">
 												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
 											</button>
 										</form>

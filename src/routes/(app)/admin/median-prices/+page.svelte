@@ -6,6 +6,7 @@
 	import { formatBaht, formatThaiDate, exportToCsv, downloadCsvTemplate } from '$lib/utils/format';
 	import CustomDatePicker from '$lib/components/CustomDatePicker.svelte';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
+	import { swalConfirmDelete } from '$lib/utils/swal';
 
 	let { data, form: formResult } = $props();
 
@@ -150,7 +151,7 @@
 									<button onclick={() => (editingPrice = price)} class="action-btn edit-btn">แก้ไข</button>
 									<form method="POST" action="?/delete&province_id={data.selectedProvinceId}" use:enhance class="inline-form">
 										<input type="hidden" name="id" value={price.id} />
-										<button type="submit" onclick={(e) => { if (!confirm('ลบราคากลางนี้?')) e.preventDefault(); }} class="action-btn delete-btn">ลบ</button>
+										<button type="submit" onclick={(e) => swalConfirmDelete(e)} class="action-btn delete-btn">ลบ</button>
 									</form>
 								</div>
 							</td>

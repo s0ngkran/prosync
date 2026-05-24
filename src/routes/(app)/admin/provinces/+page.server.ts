@@ -48,6 +48,40 @@ export const actions: Actions = {
 		}
 	},
 
+	importCsv: async ({ request }) => {
+		const formData = await request.formData();
+		const file = formData.get('csv_file') as File | null;
+		if (!file || file.size === 0) return fail(400, { success: false, errors: { name: ['กรุณาเลือกไฟล์ CSV'] } });
+
+		try {
+			const text = await file.text();
+			const { parseCsv } = await import('$lib/utils/format');
+			const rows = parseCsv(text);
+			if (rows.length === 0) return fail(400, { success: false, errors: { name: ['ไฟล์ CSV ว่างเปล่า'] } });
+
+			const existing = await db.select().from(provinces);
+			const existingNames = new Set(existing.map((p) => p.name.trim()));
+
+			let created = 0;
+			let skipped = 0;
+
+			for (const row of rows) {
+				const name = row['ชื่อจังหวัด']?.trim();
+				if (!name) { skipped++; continue; }
+				if (existingNames.has(name)) { skipped++; continue; }
+
+				await db.insert(provinces).values({ name });
+				existingNames.add(name);
+				created++;
+			}
+
+			return { success: true, message: `นำเข้าสำเร็จ ${created} จังหวัด` + (skipped > 0 ? ` (ข้าม ${skipped} รายการ)` : '') };
+		} catch (err) {
+			console.error('Import CSV error:', err);
+			return fail(500, { success: false, errors: { name: ['เกิดข้อผิดพลาดในการนำเข้า'] } });
+		}
+	},
+
 	delete: async ({ request }) => {
 		const formData = await request.formData();
 		const id = Number(formData.get('id'));

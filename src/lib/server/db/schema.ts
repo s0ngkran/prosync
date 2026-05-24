@@ -219,8 +219,14 @@ export const workflowSteps = pgTable('workflow_steps', {
 	step_assignees: jsonb('step_assignees')
 });
 
+export const vendorTypes = pgTable('vendor_types', {
+	id: serial('id').primaryKey(),
+	name: varchar('name', { length: 100 }).notNull()
+});
+
 export const vendors = pgTable('vendors', {
 	id: serial('id').primaryKey(),
+	vendor_type_id: integer('vendor_type_id').references(() => vendorTypes.id),
 	vendor_type: varchar('vendor_type', { length: 100 }),
 	tax_id: varchar('tax_id', { length: 13 }).notNull().unique(),
 	company_name: varchar('company_name', { length: 255 }).notNull(),

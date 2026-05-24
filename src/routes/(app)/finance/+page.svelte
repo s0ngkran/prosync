@@ -10,6 +10,7 @@
 	import { formatBaht, formatNumber, exportToCsv } from '$lib/utils/format';
 	import { getBankLogo } from '$lib/utils/bank-logo';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
+	import { swalConfirmDelete } from '$lib/utils/swal';
 	import { decrementFinance } from '$lib/stores/taskCounts.svelte';
 
 	let { data, form: formResult } = $props();
@@ -53,6 +54,10 @@
 	// Filter states
 	let vendorTypeFilter = $state('');
 	let vendorSearch = $state('');
+	let showVendorModal = $state(false);
+	let editingVendor = $state<any>(null);
+	let showVendorTypeModal = $state(false);
+	let canManageVendors = $derived(data.user.is_super_admin || data.user.is_director || data.user.permissions.can_manage_finance);
 	let loanTypeFilter = $state('');
 	let selectedFyId = $state<number | null>(null);
 
@@ -86,7 +91,7 @@
 	);
 	let filteredVendors = $derived(
 		data.vendors.filter((v: any) => {
-			if (vendorTypeFilter && v.vendor_type !== vendorTypeFilter) return false;
+			if (vendorTypeFilter && String(v.vendor_type_id) !== vendorTypeFilter) return false;
 			if (vendorSearch) {
 				const q = vendorSearch.toLowerCase();
 				return v.company_name.toLowerCase().includes(q) || v.tax_id.includes(q);
@@ -424,7 +429,7 @@
 	{/if}
 
 	{#if activeTab === 'vendors'}
-		<div class="mt-4 flex items-center gap-3">
+		<div class="mt-4 flex items-center gap-3 flex-wrap">
 			<div class="relative flex-1" style="max-width: 18rem">
 				<svg class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/></svg>
 				<input type="text" placeholder="ค้นหาชื่อหรือเลขผู้เสียภาษี..."
@@ -434,10 +439,17 @@
 			<select bind:value={vendorTypeFilter}
 				class="rounded-lg border px-3 py-1.5 text-sm outline-none" style="border-color: oklch(0.82 0.015 180);">
 				<option value="">ทุกประเภท</option>
-				<option value="นิติบุคคล">นิติบุคคล</option>
-				<option value="บุคคลธรรมดา">บุคคลธรรมดา</option>
+				{#each data.vendorTypes as vt}
+					<option value={String(vt.id)}>{vt.name}</option>
+				{/each}
 			</select>
-			<span class="ml-auto text-sm text-gray-500">{filteredVendors.length} รายการ</span>
+			<span class="text-sm text-gray-500">{filteredVendors.length} รายการ</span>
+			{#if canManageVendors}
+				<div class="ml-auto flex gap-2">
+					<button onclick={() => (showVendorTypeModal = true)} class="rounded-lg border px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50" style="border-color: oklch(0.82 0.015 180);">จัดการประเภท</button>
+					<button onclick={() => (showVendorModal = true)} class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">เพิ่มผู้ประกอบการ</button>
+				</div>
+			{/if}
 		</div>
 		<div class="mt-2 overflow-hidden rounded-xl border bg-white shadow-sm">
 			<table class="w-full text-left text-sm">
@@ -450,6 +462,9 @@
 						<th class="px-4 py-3 font-medium text-gray-600">ผู้ติดต่อ</th>
 						<th class="px-4 py-3 font-medium text-gray-600">เบอร์โทร</th>
 						<th class="px-4 py-3 font-medium text-gray-600">อีเมล</th>
+						{#if canManageVendors}
+							<th class="px-4 py-3 font-medium text-gray-600">จัดการ</th>
+						{/if}
 					</tr>
 				</thead>
 				<tbody class="divide-y">
@@ -458,10 +473,10 @@
 							<td class="px-4 py-3 font-mono text-gray-500">{v.id}</td>
 							<td class="px-4 py-3 font-medium text-gray-900">{v.company_name}</td>
 							<td class="px-4 py-3">
-								{#if v.vendor_type === 'นิติบุคคล'}
-									<span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">นิติบุคคล</span>
-								{:else if v.vendor_type === 'บุคคลธรรมดา'}
-									<span class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">บุคคลธรรมดา</span>
+								{#if v.vendor_type_name}
+									<span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{v.vendor_type_name}</span>
+								{:else if v.vendor_type}
+									<span class="rounded-full bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-600">{v.vendor_type}</span>
 								{:else}
 									<span class="text-gray-400">-</span>
 								{/if}
@@ -470,10 +485,23 @@
 							<td class="px-4 py-3">{v.contact_person || '-'}</td>
 							<td class="px-4 py-3">{v.contact_phone || '-'}</td>
 							<td class="px-4 py-3">{v.contact_email || '-'}</td>
+							{#if canManageVendors}
+								<td class="px-4 py-3">
+									<div class="flex gap-1">
+										<button onclick={() => (editingVendor = v)} class="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">แก้ไข</button>
+										{#if data.user.is_super_admin}
+											<form method="POST" action="?/deleteVendor" use:enhance style="display:inline;">
+												<input type="hidden" name="id" value={v.id} />
+												<button type="submit" class="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50" onclick={(e) => swalConfirmDelete(e, v.company_name)}>ลบ</button>
+											</form>
+										{/if}
+									</div>
+								</td>
+							{/if}
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="7" class="px-4 py-8 text-center text-gray-500">ไม่พบผู้ประกอบการ</td>
+							<td colspan={canManageVendors ? 8 : 7} class="px-4 py-8 text-center text-gray-500">ไม่พบผู้ประกอบการ</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -910,3 +938,142 @@
 		flex-shrink: 0;
 	}
 </style>
+
+<!-- Vendor Create Modal -->
+{#if showVendorModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">เพิ่มผู้ประกอบการ</h2>
+			<form method="POST" action="?/createVendor" use:enhance={() => {
+				return async ({ update }) => { showVendorModal = false; await update(); };
+			}}>
+				<div class="mt-4 space-y-3">
+					<div>
+						<label class="block text-sm font-medium text-gray-700">ชื่อบริษัท/ร้านค้า <span class="text-red-500">*</span></label>
+						<input name="company_name" required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">เลขผู้เสียภาษี <span class="text-red-500">*</span></label>
+							<input name="tax_id" required maxlength="13" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700">ประเภท</label>
+							<select name="vendor_type_id" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+								<option value="">-- ไม่ระบุ --</option>
+								{#each data.vendorTypes as vt}
+									<option value={vt.id}>{vt.name}</option>
+								{/each}
+							</select>
+						</div>
+					</div>
+					<div>
+						<label class="block text-sm font-medium text-gray-700">ผู้ติดต่อ</label>
+						<input name="contact_person" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">เบอร์โทร</label>
+							<input name="contact_phone" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700">อีเมล</label>
+							<input name="contact_email" type="email" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+					</div>
+				</div>
+				<div class="mt-6 flex justify-end gap-2">
+					<button type="button" onclick={() => (showVendorModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+					<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">บันทึก</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- Vendor Edit Modal -->
+{#if editingVendor}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">แก้ไขผู้ประกอบการ</h2>
+			<form method="POST" action="?/updateVendor" use:enhance={() => {
+				return async ({ update }) => { editingVendor = null; await update(); };
+			}}>
+				<input type="hidden" name="id" value={editingVendor.id} />
+				<div class="mt-4 space-y-3">
+					<div>
+						<label class="block text-sm font-medium text-gray-700">ชื่อบริษัท/ร้านค้า <span class="text-red-500">*</span></label>
+						<input name="company_name" required value={editingVendor.company_name} class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">เลขผู้เสียภาษี</label>
+							<input value={editingVendor.tax_id} disabled class="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700">ประเภท</label>
+							<select name="vendor_type_id" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+								<option value="">-- ไม่ระบุ --</option>
+								{#each data.vendorTypes as vt}
+									<option value={vt.id} selected={editingVendor.vendor_type_id === vt.id}>{vt.name}</option>
+								{/each}
+							</select>
+						</div>
+					</div>
+					<div>
+						<label class="block text-sm font-medium text-gray-700">ผู้ติดต่อ</label>
+						<input name="contact_person" value={editingVendor.contact_person || ''} class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">เบอร์โทร</label>
+							<input name="contact_phone" value={editingVendor.contact_phone || ''} class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700">อีเมล</label>
+							<input name="contact_email" type="email" value={editingVendor.contact_email || ''} class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+					</div>
+				</div>
+				<div class="mt-6 flex justify-end gap-2">
+					<button type="button" onclick={() => (editingVendor = null)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+					<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">บันทึก</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- Vendor Type Management Modal -->
+{#if showVendorTypeModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">จัดการประเภทผู้ประกอบการ</h2>
+
+			<div class="mt-4 max-h-60 space-y-2 overflow-y-auto">
+				{#each data.vendorTypes as vt}
+					<div class="flex items-center justify-between rounded-lg border bg-gray-50 px-3 py-2">
+						<span class="text-sm">{vt.name}</span>
+						{#if data.user.is_super_admin}
+							<form method="POST" action="?/deleteVendorType" use:enhance style="display:inline;">
+								<input type="hidden" name="id" value={vt.id} />
+								<button type="submit" class="text-xs text-red-600 hover:text-red-800" onclick={(e) => swalConfirmDelete(e, vt.name)}>ลบ</button>
+							</form>
+						{/if}
+					</div>
+				{:else}
+					<p class="py-4 text-center text-sm text-gray-500">ยังไม่มีประเภท</p>
+				{/each}
+			</div>
+
+			<form method="POST" action="?/createVendorType" use:enhance class="mt-4 flex gap-2">
+				<input name="name" required placeholder="ชื่อประเภทใหม่" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+				<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">เพิ่ม</button>
+			</form>
+
+			<div class="mt-4 flex justify-end">
+				<button type="button" onclick={() => (showVendorTypeModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ปิด</button>
+			</div>
+		</div>
+	</div>
+{/if}

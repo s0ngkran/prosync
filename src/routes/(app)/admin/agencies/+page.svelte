@@ -3,7 +3,7 @@
 	import type { PageData, ActionData } from './$types';
 	import BackButton from '$lib/components/BackButton.svelte';
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
-	import { exportToCsv } from '$lib/utils/format';
+	import { exportToCsv, downloadCsvTemplate } from '$lib/utils/format';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -15,6 +15,7 @@
 	let editType = $state('');
 	let editProvinceId = $state<number | null>(null);
 	let showCreateForm = $state(false);
+	let showImportModal = $state(false);
 	let currentPage = $state(1);
 	const perPage = 10;
 
@@ -56,6 +57,10 @@
 			</p>
 		</div>
 		<div class="header-actions">
+			<button onclick={() => (showImportModal = true)} class="btn-secondary">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+				นำเข้า CSV
+			</button>
 			<button onclick={handleExportCsv} class="btn-secondary">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
 				ส่งออก CSV
@@ -136,7 +141,7 @@
 									<div class="row-actions">
 										<button onclick={() => startEdit(agency)} class="action-btn edit-btn">แก้ไข</button>
 										<form method="POST" action="?/delete" use:enhance={() => {
-											return async ({ update }) => { if (confirm('ต้องการลบหน่วยงานนี้?')) await update(); };
+											return async ({ update }) => { const { confirmDelete } = await import('$lib/utils/swal'); if (await confirmDelete()) await update(); };
 										}} class="inline-form">
 											<input type="hidden" name="id" value={agency.id} />
 											<button type="submit" class="action-btn delete-btn">ลบ</button>
@@ -172,6 +177,44 @@
 		{/if}
 	</div>
 </div>
+
+<!-- Import CSV Modal -->
+{#if showImportModal}
+	<div class="modal-backdrop" onclick={() => (showImportModal = false)}>
+		<div class="modal-card" onclick={(e) => e.stopPropagation()}>
+			<h2 class="modal-title">นำเข้าหน่วยงานจาก CSV</h2>
+			<p style="margin: 0 0 12px; font-size: 0.8125rem; color: oklch(0.5 0.02 180);">อัปโหลดไฟล์ CSV ที่มีข้อมูลหน่วยงาน</p>
+
+			<div style="padding: 14px; border-radius: 10px; border: 1px dashed oklch(0.82 0.015 180); background: oklch(0.98 0.005 180);">
+				<p style="margin: 0 0 6px; font-size: 0.75rem; color: oklch(0.5 0.02 180);">คอลัมน์ที่รองรับ:</p>
+				<p style="margin: 0; font-size: 0.75rem; font-family: monospace; color: oklch(0.35 0.02 180);">ชื่อหน่วยงาน*, ประเภท*, จังหวัด*</p>
+				<p style="margin: 4px 0 0; font-size: 0.6875rem; color: oklch(0.6 0.02 180);">* = จำเป็น | ประเภท: โรงพยาบาล, อบจ., เทศบาลนคร, เทศบาลเมือง, เทศบาลตำบล, อบต. | ชื่อจังหวัดต้องตรงกับที่มีในระบบ</p>
+				<button type="button" onclick={() => downloadCsvTemplate('agencies',
+					['ชื่อหน่วยงาน', 'ประเภท', 'จังหวัด'],
+					[
+						['โรงพยาบาลร้อยเอ็ด', 'โรงพยาบาล', 'ร้อยเอ็ด'],
+						['เทศบาลเมืองร้อยเอ็ด', 'เทศบาลเมือง', 'ร้อยเอ็ด'],
+						['อบจ. ขอนแก่น', 'อบจ.', 'ขอนแก่น'],
+					]
+				)} style="margin-top: 8px; font-size: 0.75rem; color: oklch(0.42 0.12 240); background: none; border: none; cursor: pointer; text-decoration: underline;">
+					ดาวน์โหลด Template CSV
+				</button>
+			</div>
+
+			<form method="POST" action="?/importCsv" enctype="multipart/form-data" use:enhance={() => {
+				return async ({ update }) => { showImportModal = false; await update(); };
+			}}>
+				<div style="margin-top: 16px;">
+					<input name="csv_file" type="file" accept=".csv" required style="font-size: 0.875rem;" />
+				</div>
+				<div class="modal-footer">
+					<button type="button" onclick={() => (showImportModal = false)} class="btn-ghost">ยกเลิก</button>
+					<button type="submit" class="btn-primary">นำเข้า</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.page-container { animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
@@ -250,7 +293,14 @@
 	.page-active { background: oklch(0.52 0.14 240); color: oklch(0.98 0.005 180); border-color: oklch(0.52 0.14 240); }
 	.list-footer { padding: 12px 20px; font-size: 0.8125rem; color: oklch(0.55 0.02 180); text-align: center; border-top: 1px solid oklch(0.92 0.005 180); }
 
+	/* Modal */
+	.modal-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: oklch(0.15 0.02 180 / 0.5); backdrop-filter: blur(4px); animation: fade-in 0.2s ease; }
+	.modal-card { width: 100%; max-width: 520px; background: oklch(0.995 0.002 180); border-radius: 18px; padding: 28px; box-shadow: 0 20px 60px oklch(0.15 0.02 180 / 0.2); animation: scale-in 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+	.modal-title { margin: 0 0 20px 0; font-size: 1.125rem; font-weight: 600; color: oklch(0.2 0.02 180); }
+	.modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid oklch(0.92 0.005 180); }
+
 	@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+	@keyframes scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
 	@keyframes slide-down { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
 
 	@media (max-width: 768px) { .page-header { flex-direction: column; } .create-grid { grid-template-columns: 1fr; } .edit-grid { grid-template-columns: 1fr; } }

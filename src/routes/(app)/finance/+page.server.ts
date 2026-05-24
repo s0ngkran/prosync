@@ -53,8 +53,23 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 
 	const agencyId = getAgencyScope(user, cookies);
 
-	// Load all vendors (global, not agency-scoped)
-	const vendorList = await db.select().from(vendors);
+	// Load all vendors with type name
+	const { vendorTypes } = await import('$lib/server/db/schema');
+	const vendorTypeList = await db.select().from(vendorTypes).orderBy(vendorTypes.name);
+	const vendorList = await db
+		.select({
+			id: vendors.id,
+			vendor_type_id: vendors.vendor_type_id,
+			vendor_type: vendors.vendor_type,
+			vendor_type_name: vendorTypes.name,
+			tax_id: vendors.tax_id,
+			company_name: vendors.company_name,
+			contact_person: vendors.contact_person,
+			contact_email: vendors.contact_email,
+			contact_phone: vendors.contact_phone
+		})
+		.from(vendors)
+		.leftJoin(vendorTypes, eq(vendors.vendor_type_id, vendorTypes.id));
 
 	let dikaList: DikaRow[] = [];
 	let accountList: BankAccountRow[] = [];
@@ -141,6 +156,7 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 		taxTransactions: taxList,
 		loans: loanList,
 		vendors: vendorList,
+		vendorTypes: vendorTypeList,
 		banks: bankList,
 		fiscalYears: fyList,
 		allAgencies,
@@ -497,6 +513,123 @@ export const actions: Actions = {
 		} catch (err) {
 			console.error('Repay loan error:', err);
 			return fail(500, { success: false, errors: { loan_id: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });
+		}
+	},
+
+	// ── Vendor Type CRUD ──
+	createVendorType: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin && !locals.user?.is_director && !locals.user?.permissions.can_manage_finance) {
+			return fail(403, { success: false, errors: { name: ['ไม่มีสิทธิ์'] } });
+		}
+		const form = await request.formData();
+		const name = form.get('name')?.toString().trim();
+		if (!name) return fail(400, { success: false, errors: { name: ['กรุณากรอกชื่อประเภท'] } });
+
+		try {
+			const { vendorTypes } = await import('$lib/server/db/schema');
+			await db.insert(vendorTypes).values({ name });
+			return { success: true, message: 'เพิ่มประเภทผู้ประกอบการสำเร็จ' };
+		} catch (err) {
+			console.error('Create vendor type error:', err);
+			return fail(500, { success: false, errors: { name: ['เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	deleteVendorType: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin) return fail(403, { success: false, errors: { id: ['ไม่มีสิทธิ์'] } });
+		const id = Number((await request.formData()).get('id'));
+		if (!id) return fail(400, { success: false, errors: { id: ['ไม่พบประเภท'] } });
+
+		try {
+			const { vendorTypes } = await import('$lib/server/db/schema');
+			await db.delete(vendorTypes).where(eq(vendorTypes.id, id));
+			return { success: true, message: 'ลบประเภทสำเร็จ' };
+		} catch (err) {
+			console.error('Delete vendor type error:', err);
+			return fail(500, { success: false, errors: { id: ['เกิดข้อผิดพลาด อาจมีผู้ประกอบการที่ใช้ประเภทนี้อยู่'] } });
+		}
+	},
+
+	// ── Vendor CRUD ──
+	createVendor: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin && !locals.user?.is_director && !locals.user?.permissions.can_manage_finance) {
+			return fail(403, { success: false, errors: { company_name: ['ไม่มีสิทธิ์'] } });
+		}
+		const form = await request.formData();
+		const company_name = form.get('company_name')?.toString().trim();
+		const tax_id = form.get('tax_id')?.toString().trim();
+		const vendor_type_id = form.get('vendor_type_id')?.toString();
+		if (!company_name || !tax_id) return fail(400, { success: false, errors: { company_name: ['กรุณากรอกข้อมูลที่จำเป็น'] } });
+
+		try {
+			const { vendorTypes } = await import('$lib/server/db/schema');
+			const vtId = vendor_type_id ? Number(vendor_type_id) : null;
+			let vtName: string | null = null;
+			if (vtId) {
+				const [vt] = await db.select({ name: vendorTypes.name }).from(vendorTypes).where(eq(vendorTypes.id, vtId));
+				vtName = vt?.name ?? null;
+			}
+			await db.insert(vendors).values({
+				company_name,
+				tax_id,
+				vendor_type_id: vtId,
+				vendor_type: vtName,
+				contact_person: form.get('contact_person')?.toString().trim() || null,
+				contact_email: form.get('contact_email')?.toString().trim() || null,
+				contact_phone: form.get('contact_phone')?.toString().trim() || null
+			});
+			return { success: true, message: 'เพิ่มผู้ประกอบการสำเร็จ' };
+		} catch (err: any) {
+			if (err?.code === '23505') return fail(400, { success: false, errors: { tax_id: ['เลขผู้เสียภาษีซ้ำ'] } });
+			console.error('Create vendor error:', err);
+			return fail(500, { success: false, errors: { company_name: ['เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	updateVendor: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin && !locals.user?.is_director && !locals.user?.permissions.can_manage_finance) {
+			return fail(403, { success: false, errors: { company_name: ['ไม่มีสิทธิ์'] } });
+		}
+		const form = await request.formData();
+		const id = Number(form.get('id'));
+		const company_name = form.get('company_name')?.toString().trim();
+		const vendor_type_id = form.get('vendor_type_id')?.toString();
+		if (!id || !company_name) return fail(400, { success: false, errors: { company_name: ['ข้อมูลไม่ครบ'] } });
+
+		try {
+			const { vendorTypes } = await import('$lib/server/db/schema');
+			const vtId = vendor_type_id ? Number(vendor_type_id) : null;
+			let vtName: string | null = null;
+			if (vtId) {
+				const [vt] = await db.select({ name: vendorTypes.name }).from(vendorTypes).where(eq(vendorTypes.id, vtId));
+				vtName = vt?.name ?? null;
+			}
+			await db.update(vendors).set({
+				company_name,
+				vendor_type_id: vtId,
+				vendor_type: vtName,
+				contact_person: form.get('contact_person')?.toString().trim() || null,
+				contact_email: form.get('contact_email')?.toString().trim() || null,
+				contact_phone: form.get('contact_phone')?.toString().trim() || null
+			}).where(eq(vendors.id, id));
+			return { success: true, message: 'แก้ไขผู้ประกอบการสำเร็จ' };
+		} catch (err) {
+			console.error('Update vendor error:', err);
+			return fail(500, { success: false, errors: { company_name: ['เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	deleteVendor: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin) return fail(403, { success: false, errors: { id: ['ไม่มีสิทธิ์'] } });
+		const id = Number((await request.formData()).get('id'));
+		if (!id) return fail(400, { success: false, errors: { id: ['ไม่พบผู้ประกอบการ'] } });
+
+		try {
+			await db.delete(vendors).where(eq(vendors.id, id));
+			return { success: true, message: 'ลบผู้ประกอบการสำเร็จ' };
+		} catch (err) {
+			console.error('Delete vendor error:', err);
+			return fail(500, { success: false, errors: { id: ['เกิดข้อผิดพลาด อาจมีเอกสารที่อ้างอิงอยู่'] } });
 		}
 	}
 };

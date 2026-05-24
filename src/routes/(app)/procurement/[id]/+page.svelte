@@ -7,6 +7,7 @@
 	import { formatThaiDateTime, formatBaht, formatNumber } from '$lib/utils/format';
 	import { goto } from '$app/navigation';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
+	import { swalConfirmDelete } from '$lib/utils/swal';
 	import { decrementProcurement } from '$lib/stores/taskCounts.svelte';
 
 	let { data, form: formResult } = $props();
@@ -217,7 +218,7 @@
 										<form method="POST" action="?/removeCommittee" use:enhance class="inline">
 											<input type="hidden" name="committee_id" value={member.id} />
 											<button type="submit" class="ml-1 rounded p-0.5 text-red-400 hover:bg-red-50 hover:text-red-600" title="ลบ"
-												onclick={(e) => { if (!confirm(`ลบ "${member.user_name}" ออกจากคณะกรรมการ?`)) e.preventDefault(); }}>
+												onclick={(e) => swalConfirmDelete(e, member.user_name)}>
 												<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
 											</button>
 										</form>

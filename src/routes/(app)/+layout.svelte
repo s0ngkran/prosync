@@ -3,6 +3,7 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import NotificationBell from '$lib/components/NotificationBell.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import DevTool from '$lib/components/DevTool.svelte';
 	import { initCounts, getProcurementCount, getFinanceCount, getTotalCount } from '$lib/stores/taskCounts.svelte';
 
 	let { data, children } = $props();
@@ -108,6 +109,7 @@
 </div>
 
 <Toast />
+<DevTool user={data.user} />
 
 <style>
 	.profile-container { position: relative; }

@@ -4,6 +4,7 @@
 	import BackButton from '$lib/components/BackButton.svelte';
 	import { exportToCsv, downloadCsvTemplate } from '$lib/utils/format';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
+	import { swalConfirmDelete } from '$lib/utils/swal';
 
 	let { data, form }: { data: PageData; form: any } = $props();
 
@@ -269,7 +270,7 @@
 								</button>
 								<form method="POST" action="?/delete" use:enhance class="inline-form">
 									<input type="hidden" name="id" value={role.id} />
-									<button type="submit" onclick={(e) => { if (!confirm('ลบบทบาทนี้?')) e.preventDefault(); }} class="action-btn delete">
+									<button type="submit" onclick={(e) => swalConfirmDelete(e)} class="action-btn delete">
 										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="action-icon">
 											<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
 										</svg>

@@ -58,6 +58,49 @@ export const actions: Actions = {
 		}
 	},
 
+	importCsv: async ({ request }) => {
+		const formData = await request.formData();
+		const file = formData.get('csv_file') as File | null;
+		if (!file || file.size === 0) return fail(400, { error: 'กรุณาเลือกไฟล์ CSV' });
+
+		try {
+			const text = await file.text();
+			const { parseCsv } = await import('$lib/utils/format');
+			const rows = parseCsv(text);
+			if (rows.length === 0) return fail(400, { error: 'ไฟล์ CSV ว่างเปล่า' });
+
+			const allProvinces = await db.select().from(provinces);
+			const provMap = new Map(allProvinces.map((p) => [p.name.trim(), p.id]));
+
+			let created = 0;
+			let skipped = 0;
+
+			for (const row of rows) {
+				const name = row['ชื่อหน่วยงาน']?.trim();
+				const agencyType = row['ประเภท']?.trim();
+				const provinceName = row['จังหวัด']?.trim();
+
+				if (!name || !agencyType || !provinceName) { skipped++; continue; }
+
+				const provinceId = provMap.get(provinceName);
+				if (!provinceId) { skipped++; continue; }
+
+				await db.insert(agencies).values({
+					name,
+					agency_type: agencyType,
+					province_id: provinceId
+				});
+				created++;
+			}
+
+			const msg = `นำเข้าสำเร็จ ${created} หน่วยงาน` + (skipped > 0 ? ` (ข้าม ${skipped} รายการ)` : '');
+			return { success: true, message: msg };
+		} catch (err) {
+			console.error('Import CSV error:', err);
+			return fail(500, { error: 'เกิดข้อผิดพลาดในการนำเข้า' });
+		}
+	},
+
 	delete: async ({ request }) => {
 		const formData = await request.formData();
 		const id = Number(formData.get('id'));

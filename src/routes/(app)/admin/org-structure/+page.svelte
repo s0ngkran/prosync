@@ -4,6 +4,7 @@
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
 	import { downloadCsvTemplate, exportToCsv } from '$lib/utils/format';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
+	import { swalConfirmDelete } from '$lib/utils/swal';
 
 	let { data, form: formResult } = $props();
 
@@ -112,7 +113,7 @@
 						<input type="hidden" name="id" value={node.id} />
 						<button
 							type="submit"
-							onclick={(e) => { if (!confirm(`ลบแผนก "${node.name}"?`)) e.preventDefault(); }}
+							onclick={(e) => swalConfirmDelete(e, node.name)}
 							class="action-btn delete-btn"
 						>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -278,7 +279,9 @@
 
 <!-- Import CSV Modal -->
 {#if showImportModal}
+	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showImportModal = false)}>
+		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 		<div class="modal-card" onclick={(e) => e.stopPropagation()}>
 			<h2 class="modal-title">นำเข้าโครงสร้างองค์กรจาก CSV</h2>
 			<p style="margin: 4px 0 0; font-size: 0.8125rem; color: oklch(0.5 0.02 180);">อัปโหลดไฟล์ CSV ที่มีข้อมูลแผนก/กอง</p>
