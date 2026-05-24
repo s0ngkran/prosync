@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
-	import { formatBaht } from '$lib/utils/format';
+	import { formatBaht, downloadCsvTemplate } from '$lib/utils/format';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
 	import CustomDatePicker from '$lib/components/CustomDatePicker.svelte';
@@ -9,6 +9,7 @@
 
 	let { data } = $props();
 	let showCreateModal = $state(false);
+	let showPlanImportModal = $state(false);
 	let showFyModal = $state(false);
 	let editingPlan = $state<any>(null);
 	let creatingParentId = $state<number | null>(null);
@@ -374,6 +375,11 @@
 					style="color: {canCreate ? 'var(--color-slate-600)' : 'var(--color-slate-300)'}; border: 1px solid var(--color-slate-200); opacity: {canCreate ? '1' : '0.6'}">
 					สร้างปีงบ
 				</button>
+				<button onclick={() => (showPlanImportModal = true)} disabled={!canCreate}
+					class="rounded-md px-2.5 py-1 text-[0.75rem] font-medium transition-colors duration-150 disabled:cursor-not-allowed"
+					style="color: {canCreate ? 'var(--color-slate-600)' : 'var(--color-slate-300)'}; border: 1px solid var(--color-slate-200); opacity: {canCreate ? '1' : '0.6'}">
+					นำเข้า CSV
+				</button>
 				<button onclick={() => { creatingParentId = null; showCreateModal = true; }} disabled={!canCreate}
 					class="rounded-md px-3 py-1 text-[0.75rem] font-medium text-white transition-all duration-200 disabled:cursor-not-allowed"
 					style="background: {canCreate ? 'var(--color-brand-600)' : 'var(--color-slate-300)'}">
@@ -515,15 +521,29 @@
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
 				</button>
 				<h3 style="color: var(--color-slate-900)">สร้างปีงบประมาณ</h3>
-				<form method="POST" action="?/createFiscalYear" use:enhance={() => {
+				<form method="POST" action="?/duplicateFiscalYear" use:enhance={() => {
 					return async ({ update, result }) => { showFyModal = false; if (result.type === 'success') showToast('สร้างปีงบประมาณสำเร็จ'); await update(); };
 				}}>
 					<input type="hidden" name="agency_id" value={data.selectedAgencyId || ''} />
-					<div class="mt-5">
-						{@render formField('fy-year', 'ปีงบประมาณ (พ.ศ.)', true)}
-						<input id="fy-year" name="year_name" maxlength="4" placeholder="เช่น 2569" required
-							class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none"
-							style="border: 1px solid var(--color-slate-200); color: var(--color-slate-900); background: white" />
+					<div class="mt-5 space-y-4">
+						<div>
+							{@render formField('fy-year', 'ปีงบประมาณ (พ.ศ.)', true)}
+							<input id="fy-year" name="year_name" maxlength="4" placeholder="เช่น 2569" required
+								class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none"
+								style="border: 1px solid var(--color-slate-200); color: var(--color-slate-900); background: white" />
+						</div>
+						<div>
+							{@render formField('fy-source', 'คัดลอกแผนจากปีงบประมาณ', false)}
+							<select id="fy-source" name="source_fy_id"
+								class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none"
+								style="border: 1px solid var(--color-slate-200); color: var(--color-slate-900); background: white">
+								<option value="">-- ไม่คัดลอก (สร้างว่าง) --</option>
+								{#each data.fiscalYears as fy}
+									<option value={fy.id}>ปี {fy.year_name}</option>
+								{/each}
+							</select>
+							<p class="mt-1 text-xs" style="color: var(--color-slate-400)">คัดลอกแผนทั้งหมดจากปีที่เลือก (เฉพาะงบคาดการณ์ ไม่รวมยอดจริง)</p>
+						</div>
 					</div>
 					<div class="mt-6 flex justify-end gap-2">
 						<button type="button" onclick={() => (showFyModal = false)}
@@ -1041,3 +1061,43 @@
 {/if}
 
 <!-- Toast notifications handled by global Toast component -->
+
+<!-- Import Plan CSV Modal -->
+{#if showPlanImportModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center" style="background: oklch(0.15 0.02 180 / 0.5); backdrop-filter: blur(4px);">
+		<div class="w-full max-w-lg rounded-2xl bg-white p-7 shadow-2xl" style="animation: scale-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);" onclick={(e) => e.stopPropagation()}>
+			<h2 class="mb-4 text-lg font-semibold" style="color: oklch(0.2 0.02 180);">นำเข้าแผนงานจาก CSV</h2>
+			<p class="text-sm" style="color: oklch(0.5 0.02 180);">นำเข้าแผนงานสำหรับปีงบประมาณที่เลือกอยู่</p>
+
+			<div class="mt-3 rounded-lg p-4" style="border: 1px dashed oklch(0.82 0.015 180); background: oklch(0.98 0.005 180);">
+				<p class="text-xs mb-2" style="color: oklch(0.5 0.02 180);">คอลัมน์ที่รองรับ:</p>
+				<p class="text-xs font-mono" style="color: oklch(0.35 0.02 180);">ชื่อแผน*, ประเภท*, วันเริ่มต้น*, วันสิ้นสุด*, แผนแม่, หน่วยรับผิดชอบ, หน่วยงานที่เกี่ยวข้อง, รายละเอียด, ผลผลิตที่คาดหวัง, เป็นแผนย่อยสุด, งบประมาณ</p>
+				<p class="text-xs mt-1" style="color: oklch(0.6 0.02 180);">* = จำเป็น | ประเภท: INCOME/EXPENSE | วันที่: YYYY-MM-DD | แผนแม่: ใส่ชื่อแผนที่มีอยู่แล้ว | หน่วยงานที่เกี่ยวข้อง: คั่นด้วย , | เป็นแผนย่อยสุด: ใช่/ไม่ใช่</p>
+				<button type="button" onclick={() => downloadCsvTemplate('plans',
+					['ชื่อแผน', 'ประเภท', 'วันเริ่มต้น', 'วันสิ้นสุด', 'แผนแม่', 'หน่วยรับผิดชอบ', 'หน่วยงานที่เกี่ยวข้อง', 'รายละเอียด', 'ผลผลิตที่คาดหวัง', 'เป็นแผนย่อยสุด', 'งบประมาณ'],
+					[
+						['แผนพัฒนาระบบสุขภาพ', 'EXPENSE', '2026-10-01', '2027-09-30', '', 'กองแผนงาน', 'กองแผนงาน, กองการเงิน', 'แผนหลักด้านสุขภาพ', '', 'ไม่ใช่', ''],
+						['โครงการจัดซื้อเวชภัณฑ์', 'EXPENSE', '2026-10-01', '2027-03-31', 'แผนพัฒนาระบบสุขภาพ', 'กองพัสดุ', 'กองพัสดุ', 'จัดซื้อยาและเวชภัณฑ์ประจำปี', 'ยาสามัญพร้อมใช้', 'ใช่', '500000'],
+						['แผนรายรับค่าบริการ', 'INCOME', '2026-10-01', '2027-09-30', '', 'กองการเงิน', 'กองการเงิน', 'รายรับจากค่าบริการทางการแพทย์', '', 'ใช่', '2000000'],
+					]
+				)} class="mt-2 text-xs hover:underline cursor-pointer" style="color: oklch(0.42 0.12 240); background: none; border: none;">
+					ดาวน์โหลด Template CSV
+				</button>
+			</div>
+
+			<form method="POST" action="?/importPlanCsv" enctype="multipart/form-data" use:enhance={() => {
+				return async ({ update }) => { showPlanImportModal = false; await update(); };
+			}}>
+				<input type="hidden" name="agency_id" value={data.selectedAgencyId || ''} />
+				<input type="hidden" name="fiscal_year_id" value={data.selectedFyId || ''} />
+				<div class="mt-4">
+					<input name="csv_file" type="file" accept=".csv" required class="block w-full text-sm text-gray-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+				</div>
+				<div class="mt-6 flex justify-end gap-3">
+					<button type="button" onclick={() => (showPlanImportModal = false)} class="rounded-lg px-4 py-2 text-sm" style="color: oklch(0.45 0.02 180);">ยกเลิก</button>
+					<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium text-white" style="background: oklch(0.52 0.14 240);">นำเข้า</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}

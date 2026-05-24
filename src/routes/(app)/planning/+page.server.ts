@@ -115,6 +115,107 @@ export const actions: Actions = {
 		}
 	},
 
+	duplicateFiscalYear: async ({ request }) => {
+		const form = await request.formData();
+		const year_name = form.get('year_name')?.toString().trim();
+		const agency_id = Number(form.get('agency_id'));
+		const source_fy_id = Number(form.get('source_fy_id'));
+
+		if (!year_name || !agency_id) {
+			return fail(400, { success: false, errors: { year_name: ['กรุณากรอกข้อมูลให้ครบ'] } });
+		}
+
+		try {
+			// Create the new fiscal year
+			const [newFy] = await db.insert(fiscalYears).values({
+				agency_id,
+				year_name
+			}).returning();
+
+			if (!source_fy_id) {
+				return { success: true, message: 'สร้างปีงบประมาณสำเร็จ (ว่าง)' };
+			}
+
+			// Load all plans from source fiscal year
+			const sourcePlans = await db
+				.select()
+				.from(plans)
+				.where(and(eq(plans.agency_id, agency_id), eq(plans.fiscal_year_id, source_fy_id)));
+
+			if (sourcePlans.length === 0) {
+				return { success: true, message: 'สร้างปีงบประมาณสำเร็จ (ปีต้นทางไม่มีแผน)' };
+			}
+
+			// Duplicate plans maintaining hierarchy
+			// First pass: create root plans (no parent), map old_id → new_id
+			const idMap = new Map<number, number>();
+
+			// Sort: root plans first, then children
+			const roots = sourcePlans.filter((p) => !p.parent_id);
+			const children = sourcePlans.filter((p) => p.parent_id);
+
+			for (const plan of roots) {
+				const [newPlan] = await db.insert(plans).values({
+					agency_id,
+					fiscal_year_id: newFy.id,
+					title: plan.title,
+					parent_id: null,
+					responsible_unit_id: plan.responsible_unit_id,
+					start_date: plan.start_date,
+					end_date: plan.end_date,
+					duration_text: plan.duration_text,
+					expected_outputs: plan.expected_outputs,
+					description: plan.description,
+					stakeholder_unit_ids: plan.stakeholder_unit_ids,
+					plan_type: plan.plan_type,
+					is_leaf_node: plan.is_leaf_node,
+					estimated_amount: plan.estimated_amount,
+					actual_amount: '0'
+				}).returning();
+				idMap.set(plan.id, newPlan.id);
+			}
+
+			// Multi-pass for children (handle deep nesting)
+			let remaining = [...children];
+			let maxPasses = 10;
+			while (remaining.length > 0 && maxPasses > 0) {
+				const next: typeof remaining = [];
+				for (const plan of remaining) {
+					const newParentId = plan.parent_id ? idMap.get(plan.parent_id) : null;
+					if (plan.parent_id && !newParentId) {
+						next.push(plan); // parent not created yet, try next pass
+						continue;
+					}
+					const [newPlan] = await db.insert(plans).values({
+						agency_id,
+						fiscal_year_id: newFy.id,
+						title: plan.title,
+						parent_id: newParentId ?? null,
+						responsible_unit_id: plan.responsible_unit_id,
+						start_date: plan.start_date,
+						end_date: plan.end_date,
+						duration_text: plan.duration_text,
+						expected_outputs: plan.expected_outputs,
+						description: plan.description,
+						stakeholder_unit_ids: plan.stakeholder_unit_ids,
+						plan_type: plan.plan_type,
+						is_leaf_node: plan.is_leaf_node,
+						estimated_amount: plan.estimated_amount,
+						actual_amount: '0'
+					}).returning();
+					idMap.set(plan.id, newPlan.id);
+				}
+				remaining = next;
+				maxPasses--;
+			}
+
+			return { success: true, message: `สร้างปีงบประมาณ ${year_name} สำเร็จ พร้อมคัดลอก ${idMap.size} แผนจากปีต้นทาง` };
+		} catch (err) {
+			console.error('Duplicate fiscal year error:', err);
+			return fail(500, { success: false, errors: { year_name: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });
+		}
+	},
+
 	createPlan: async ({ request, locals, getClientAddress }) => {
 		const parsed = parseFormData(createPlanSchema, await request.formData());
 		if (!parsed.success) {
@@ -322,6 +423,95 @@ export const actions: Actions = {
 		} catch (err) {
 			console.error('Delete plan error:', err);
 			return fail(500, { success: false, errors: { id: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });
+		}
+	},
+
+	importPlanCsv: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin && !locals.user?.permissions.can_manage_plans) {
+			return fail(403, { success: false, errors: { csv: ['ไม่มีสิทธิ์'] } });
+		}
+
+		const formData = await request.formData();
+		const file = formData.get('csv_file') as File | null;
+		const fiscal_year_id = Number(formData.get('fiscal_year_id'));
+		const agency_id = Number(formData.get('agency_id'));
+		if (!file || file.size === 0) return fail(400, { success: false, errors: { csv: ['กรุณาเลือกไฟล์ CSV'] } });
+		if (!fiscal_year_id || !agency_id) return fail(400, { success: false, errors: { csv: ['กรุณาเลือกปีงบประมาณก่อน'] } });
+
+		try {
+			const text = await file.text();
+			const { parseCsv } = await import('$lib/utils/format');
+			const rows = parseCsv(text);
+			if (rows.length === 0) return fail(400, { success: false, errors: { csv: ['ไฟล์ CSV ว่างเปล่า'] } });
+
+			// Load org units for name→id mapping
+			const allUnits = await db.select({ id: orgUnits.id, name: orgUnits.name }).from(orgUnits);
+			const unitMap = new Map(allUnits.map((u) => [u.name.trim(), u.id]));
+
+			// Load existing plans for parent title→id mapping
+			const existingPlans = await db.select({ id: plans.id, title: plans.title })
+				.from(plans)
+				.where(and(eq(plans.agency_id, agency_id), eq(plans.fiscal_year_id, fiscal_year_id)));
+			const planMap = new Map(existingPlans.map((p) => [p.title.trim(), p.id]));
+
+			let created = 0;
+			let skipped = 0;
+
+			for (const row of rows) {
+				const title = row['ชื่อแผน']?.trim();
+				const planType = row['ประเภท']?.trim()?.toUpperCase();
+				const startDate = row['วันเริ่มต้น']?.trim();
+				const endDate = row['วันสิ้นสุด']?.trim();
+				if (!title || !planType || !startDate || !endDate) { skipped++; continue; }
+				if (planType !== 'INCOME' && planType !== 'EXPENSE') { skipped++; continue; }
+
+				const parentTitle = row['แผนแม่']?.trim();
+				const parentId = parentTitle ? planMap.get(parentTitle) ?? null : null;
+
+				const responsibleName = row['หน่วยรับผิดชอบ']?.trim();
+				const responsibleUnitId = responsibleName ? unitMap.get(responsibleName) ?? null : null;
+
+				// Parse stakeholder names (comma-separated)
+				const stakeholderNames = row['หน่วยงานที่เกี่ยวข้อง']?.trim();
+				let stakeholderIds: number[] = [];
+				if (stakeholderNames) {
+					stakeholderIds = stakeholderNames.split(',').map((n: string) => unitMap.get(n.trim())).filter((id): id is number => !!id);
+				}
+				if (stakeholderIds.length === 0 && responsibleUnitId) {
+					stakeholderIds = [responsibleUnitId];
+				}
+
+				const isLeaf = row['เป็นแผนย่อยสุด']?.trim()?.toLowerCase();
+				const isLeafNode = isLeaf === 'ใช่' || isLeaf === 'true';
+				const estimatedAmount = row['งบประมาณ']?.trim();
+
+				const [newPlan] = await db.insert(plans).values({
+					agency_id,
+					fiscal_year_id,
+					title,
+					parent_id: parentId,
+					responsible_unit_id: responsibleUnitId,
+					start_date: startDate,
+					end_date: endDate,
+					duration_text: calcDuration(startDate, endDate),
+					description: row['รายละเอียด']?.trim() || null,
+					expected_outputs: row['ผลผลิตที่คาดหวัง']?.trim() ? row['ผลผลิตที่คาดหวัง'].split('\n').map((s: string) => s.trim()).filter(Boolean) : null,
+					stakeholder_unit_ids: stakeholderIds.length > 0 ? stakeholderIds : null,
+					plan_type: planType,
+					is_leaf_node: isLeafNode,
+					estimated_amount: isLeafNode && estimatedAmount ? parseFloat(estimatedAmount).toFixed(2) : '0'
+				}).returning();
+
+				// Add to map so later rows can reference this as parent
+				planMap.set(title, newPlan.id);
+				created++;
+			}
+
+			const msg = `นำเข้าสำเร็จ ${created} แผน` + (skipped > 0 ? ` (ข้าม ${skipped} รายการ)` : '');
+			return { success: true, message: msg };
+		} catch (err) {
+			console.error('Import plan CSV error:', err);
+			return fail(500, { success: false, errors: { csv: ['เกิดข้อผิดพลาดในการนำเข้า'] } });
 		}
 	}
 };
