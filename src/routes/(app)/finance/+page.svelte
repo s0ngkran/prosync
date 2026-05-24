@@ -7,7 +7,7 @@
 	import ScopeSelector from '$lib/components/ScopeSelector.svelte';
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
 	import CustomDatePicker from '$lib/components/CustomDatePicker.svelte';
-	import { formatBaht, formatNumber, exportToCsv } from '$lib/utils/format';
+	import { formatBaht, formatNumber, exportToCsv, downloadCsvTemplate } from '$lib/utils/format';
 	import { getBankLogo } from '$lib/utils/bank-logo';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
 	import { swalConfirmDelete } from '$lib/utils/swal';
@@ -55,6 +55,7 @@
 	let vendorTypeFilter = $state('');
 	let vendorSearch = $state('');
 	let showVendorModal = $state(false);
+	let showVendorImportModal = $state(false);
 	let editingVendor = $state<any>(null);
 	let showVendorTypeModal = $state(false);
 	let canManageVendors = $derived(data.user.is_super_admin || data.user.is_director || data.user.permissions.can_manage_finance);
@@ -447,6 +448,7 @@
 			{#if canManageVendors}
 				<div class="ml-auto flex gap-2">
 					<button onclick={() => (showVendorTypeModal = true)} class="rounded-lg border px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50" style="border-color: oklch(0.82 0.015 180);">จัดการประเภท</button>
+					<button onclick={() => (showVendorImportModal = true)} class="rounded-lg border px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50" style="border-color: oklch(0.82 0.015 180);">นำเข้า CSV</button>
 					<button onclick={() => (showVendorModal = true)} class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">เพิ่มผู้ประกอบการ</button>
 				</div>
 			{/if}
@@ -1074,6 +1076,44 @@
 			<div class="mt-4 flex justify-end">
 				<button type="button" onclick={() => (showVendorTypeModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ปิด</button>
 			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Vendor Import CSV Modal -->
+{#if showVendorImportModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">นำเข้าผู้ประกอบการจาก CSV</h2>
+			<p class="mt-1 text-sm text-gray-500">อัปโหลดไฟล์ CSV ที่มีข้อมูลผู้ประกอบการ</p>
+
+			<div class="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+				<p class="text-xs text-gray-500 mb-2">คอลัมน์ที่รองรับ:</p>
+				<p class="text-xs text-gray-600 font-mono">ชื่อบริษัท*, เลขผู้เสียภาษี*, ประเภท, ผู้ติดต่อ, เบอร์โทร, อีเมล</p>
+				<p class="text-xs text-gray-400 mt-1">* = จำเป็น | เลขผู้เสียภาษีต้อง 13 หลัก ซ้ำจะถูกข้าม | ชื่อประเภทต้องตรงกับที่มีในระบบ</p>
+				<button type="button" onclick={() => downloadCsvTemplate('vendors',
+					['ชื่อบริษัท', 'เลขผู้เสียภาษี', 'ประเภท', 'ผู้ติดต่อ', 'เบอร์โทร', 'อีเมล'],
+					[
+						['บริษัท อุปกรณ์การแพทย์ จำกัด', '1234567890123', 'นิติบุคคล', 'สมชาย สุขใจ', '021234567', 'contact@medical.co.th'],
+						['ร้าน เวชภัณฑ์ดี', '9876543210987', 'บุคคลธรรมดา', 'สมหญิง ดีงาม', '081234567', ''],
+						['ห้างหุ้นส่วนจำกัด ไอทีซัพพลาย', '1111222233334', 'ห้างหุ้นส่วนจำกัด', '', '029876543', 'info@itsupply.co.th'],
+					]
+				)} class="mt-2 text-xs text-blue-600 hover:underline cursor-pointer">
+					ดาวน์โหลด Template CSV
+				</button>
+			</div>
+
+			<form method="POST" action="?/importVendorCsv" enctype="multipart/form-data" use:enhance={() => {
+				return async ({ update }) => { showVendorImportModal = false; await update(); };
+			}}>
+				<div class="mt-4">
+					<input name="csv_file" type="file" accept=".csv" required class="block w-full text-sm text-gray-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+				</div>
+				<div class="mt-6 flex justify-end gap-2">
+					<button type="button" onclick={() => (showVendorImportModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+					<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">นำเข้า</button>
+				</div>
+			</form>
 		</div>
 	</div>
 {/if}

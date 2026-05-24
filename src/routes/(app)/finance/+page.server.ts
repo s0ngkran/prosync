@@ -55,21 +55,28 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 
 	// Load all vendors with type name
 	const { vendorTypes } = await import('$lib/server/db/schema');
-	const vendorTypeList = await db.select().from(vendorTypes).orderBy(vendorTypes.name);
-	const vendorList = await db
-		.select({
-			id: vendors.id,
-			vendor_type_id: vendors.vendor_type_id,
-			vendor_type: vendors.vendor_type,
-			vendor_type_name: vendorTypes.name,
-			tax_id: vendors.tax_id,
-			company_name: vendors.company_name,
-			contact_person: vendors.contact_person,
-			contact_email: vendors.contact_email,
-			contact_phone: vendors.contact_phone
-		})
-		.from(vendors)
-		.leftJoin(vendorTypes, eq(vendors.vendor_type_id, vendorTypes.id));
+	let vendorTypeList: { id: number; name: string }[] = [];
+	let vendorList: any[] = [];
+	try {
+		vendorTypeList = await db.select().from(vendorTypes).orderBy(vendorTypes.name);
+		vendorList = await db
+			.select({
+				id: vendors.id,
+				vendor_type_id: vendors.vendor_type_id,
+				vendor_type: vendors.vendor_type,
+				vendor_type_name: vendorTypes.name,
+				tax_id: vendors.tax_id,
+				company_name: vendors.company_name,
+				contact_person: vendors.contact_person,
+				contact_email: vendors.contact_email,
+				contact_phone: vendors.contact_phone
+			})
+			.from(vendors)
+			.leftJoin(vendorTypes, eq(vendors.vendor_type_id, vendorTypes.id));
+	} catch {
+		// Fallback if vendor_types table doesn't exist yet
+		vendorList = await db.select().from(vendors);
+	}
 
 	let dikaList: DikaRow[] = [];
 	let accountList: BankAccountRow[] = [];
@@ -616,6 +623,64 @@ export const actions: Actions = {
 		} catch (err) {
 			console.error('Update vendor error:', err);
 			return fail(500, { success: false, errors: { company_name: ['เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	importVendorCsv: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin && !locals.user?.is_director && !locals.user?.permissions.can_manage_finance) {
+			return fail(403, { success: false, errors: { csv: ['ไม่มีสิทธิ์'] } });
+		}
+
+		const formData = await request.formData();
+		const file = formData.get('csv_file') as File | null;
+		if (!file || file.size === 0) return fail(400, { success: false, errors: { csv: ['กรุณาเลือกไฟล์ CSV'] } });
+
+		try {
+			const text = await file.text();
+			const { parseCsv } = await import('$lib/utils/format');
+			const rows = parseCsv(text);
+			if (rows.length === 0) return fail(400, { success: false, errors: { csv: ['ไฟล์ CSV ว่างเปล่า'] } });
+
+			const { vendorTypes } = await import('$lib/server/db/schema');
+			let vtMap = new Map<string, number>();
+			try {
+				const allVt = await db.select().from(vendorTypes);
+				vtMap = new Map(allVt.map((v) => [v.name.trim(), v.id]));
+			} catch { /* vendor_types table may not exist yet */ }
+
+			let created = 0;
+			let skipped = 0;
+
+			for (const row of rows) {
+				const company_name = row['ชื่อบริษัท']?.trim();
+				const tax_id = row['เลขผู้เสียภาษี']?.trim();
+				if (!company_name || !tax_id) { skipped++; continue; }
+				if (!/^\d{13}$/.test(tax_id)) { skipped++; continue; }
+
+				// Check duplicate tax_id
+				const [existing] = await db.select({ id: vendors.id }).from(vendors).where(eq(vendors.tax_id, tax_id)).limit(1);
+				if (existing) { skipped++; continue; }
+
+				const typeName = row['ประเภท']?.trim();
+				const vtId = typeName ? vtMap.get(typeName) ?? null : null;
+
+				await db.insert(vendors).values({
+					company_name,
+					tax_id,
+					vendor_type_id: vtId,
+					vendor_type: typeName || null,
+					contact_person: row['ผู้ติดต่อ']?.trim() || null,
+					contact_phone: row['เบอร์โทร']?.trim() || null,
+					contact_email: row['อีเมล']?.trim() || null
+				});
+				created++;
+			}
+
+			const msg = `นำเข้าสำเร็จ ${created} รายการ` + (skipped > 0 ? ` (ข้าม ${skipped} รายการ)` : '');
+			return { success: true, message: msg };
+		} catch (err) {
+			console.error('Import vendor CSV error:', err);
+			return fail(500, { success: false, errors: { csv: ['เกิดข้อผิดพลาดในการนำเข้า'] } });
 		}
 	},
 
