@@ -794,7 +794,24 @@ async function seed() {
 	}
 
 	// ──────────────────────────────────────────
-	// 10. Bank Accounts (idempotent)
+	// 10a. Bank Account Types (idempotent)
+	// ──────────────────────────────────────────
+	let baTypes = await db.select().from(schema.bankAccountTypes);
+	if (baTypes.length === 0) {
+		baTypes = await db.insert(schema.bankAccountTypes).values([
+			{ name: 'บัญชีออมทรัพย์' },
+			{ name: 'บัญชีกระแสรายวัน' },
+			{ name: 'บัญชีฝากประจำ' },
+			{ name: 'บัญชีเงินบำรุง' },
+			{ name: 'บัญชีงบประมาณ' }
+		]).returning();
+		console.log('✅ Bank Account Types seeded');
+	}
+
+	const baTypeMap = Object.fromEntries(baTypes.map((t) => [t.name, t.id]));
+
+	// ──────────────────────────────────────────
+	// 10b. Bank Accounts (idempotent)
 	// ──────────────────────────────────────────
 	let bankAccounts = await db.select().from(schema.bankAccounts);
 	if (bankAccounts.length === 0) {
@@ -805,6 +822,7 @@ async function seed() {
 				{
 					agency_id: hospital.id,
 					bank_id: ktbBank.id,
+					account_type_id: baTypeMap['บัญชีเงินบำรุง'],
 					account_name: 'บัญชีเงินบำรุง',
 					account_number: '123-4-56789-0',
 					balance: '5000000.00',
@@ -813,6 +831,7 @@ async function seed() {
 				{
 					agency_id: hospital.id,
 					bank_id: ktbBank.id,
+					account_type_id: baTypeMap['บัญชีกระแสรายวัน'],
 					account_name: 'บัญชีพักหักภาษี',
 					account_number: '123-4-56789-1',
 					balance: '0.00',

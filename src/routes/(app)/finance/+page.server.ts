@@ -110,9 +110,12 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 			.innerJoin(plans, eq(dikaVouchers.plan_id, plans.id))
 			.where(eq(dikaVouchers.agency_id, agencyId));
 
+		const { bankAccountTypes } = await import('$lib/server/db/schema');
 		accountList = await db
 			.select({
 				id: bankAccounts.id,
+				account_type_id: bankAccounts.account_type_id,
+				account_type_name: bankAccountTypes.name,
 				account_name: bankAccounts.account_name,
 				account_number: bankAccounts.account_number,
 				balance: bankAccounts.balance,
@@ -123,6 +126,7 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 			})
 			.from(bankAccounts)
 			.innerJoin(bank, eq(bankAccounts.bank_id, bank.id))
+			.leftJoin(bankAccountTypes, eq(bankAccounts.account_type_id, bankAccountTypes.id))
 			.where(eq(bankAccounts.agency_id, agencyId));
 
 		taxList = await db
@@ -150,8 +154,13 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 			.where(or(eq(loans.borrower_agency_id, agencyId), eq(loans.lender_agency_id, agencyId)));
 	}
 
-	// Load bank list for account creation dropdown
+	// Load bank list + account types for account creation
 	const bankList = await db.select({ id: bank.id, name: bank.name, bank_code: bank.bank_code, logo_url: bank.logo_url }).from(bank);
+	let bankAccountTypeList: { id: number; name: string }[] = [];
+	try {
+		const { bankAccountTypes } = await import('$lib/server/db/schema');
+		bankAccountTypeList = await db.select().from(bankAccountTypes).orderBy(bankAccountTypes.name);
+	} catch { /* table may not exist yet */ }
 
 	// Load all agencies for inter-agency loan selector
 	const allAgencies = await db.select({ id: agencies.id, name: agencies.name }).from(agencies);
@@ -165,6 +174,7 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 		vendors: vendorList,
 		vendorTypes: vendorTypeList,
 		banks: bankList,
+		bankAccountTypes: bankAccountTypeList,
 		fiscalYears: fyList,
 		allAgencies,
 		provinces: [] as { id: number; name: string }[],
@@ -453,6 +463,7 @@ export const actions: Actions = {
 		try {
 			await db.insert(bankAccounts).values({
 				...parsed.data,
+				account_type_id: parsed.data.account_type_id ?? null,
 				balance: '0'
 			});
 
@@ -460,6 +471,84 @@ export const actions: Actions = {
 		} catch (err) {
 			console.error('Create bank account error:', err);
 			return fail(500, { success: false, errors: { account_name: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });
+		}
+	},
+
+	createBankAccountType: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin && !locals.user?.is_director && !locals.user?.permissions.can_manage_finance) {
+			return fail(403, { success: false, errors: { name: ['ไม่มีสิทธิ์'] } });
+		}
+		const name = (await request.formData()).get('name')?.toString().trim();
+		if (!name) return fail(400, { success: false, errors: { name: ['กรุณากรอกชื่อประเภทบัญชี'] } });
+
+		try {
+			const { bankAccountTypes } = await import('$lib/server/db/schema');
+			await db.insert(bankAccountTypes).values({ name });
+			return { success: true, message: 'เพิ่มประเภทบัญชีสำเร็จ' };
+		} catch (err) {
+			console.error('Create bank account type error:', err);
+			return fail(500, { success: false, errors: { name: ['เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	importBankAccountCsv: async ({ request, locals }) => {
+		if (!locals.user?.is_super_admin && !locals.user?.is_director && !locals.user?.permissions.can_manage_finance) {
+			return fail(403, { success: false, errors: { csv: ['ไม่มีสิทธิ์'] } });
+		}
+
+		const file = (await request.formData()).get('csv_file') as File | null;
+		if (!file || file.size === 0) return fail(400, { success: false, errors: { csv: ['กรุณาเลือกไฟล์ CSV'] } });
+
+		try {
+			const text = await file.text();
+			const { parseCsv } = await import('$lib/utils/format');
+			const rows = parseCsv(text);
+			if (rows.length === 0) return fail(400, { success: false, errors: { csv: ['ไฟล์ CSV ว่างเปล่า'] } });
+
+			const bankMap = new Map((await db.select().from(bank)).map((b) => [b.name.trim(), b.id]));
+			const { bankAccountTypes } = await import('$lib/server/db/schema');
+			let typeMap = new Map<string, number>();
+			try {
+				typeMap = new Map((await db.select().from(bankAccountTypes)).map((t) => [t.name.trim(), t.id]));
+			} catch { /* table may not exist */ }
+			const { agencies: agenciesTable } = await import('$lib/server/db/schema');
+			const agencyMap = new Map((await db.select().from(agenciesTable)).map((a) => [a.name.trim(), a.id]));
+
+			let created = 0;
+			let skipped = 0;
+
+			for (const row of rows) {
+				const accountName = row['ชื่อบัญชี']?.trim();
+				const accountNumber = row['เลขที่บัญชี']?.trim();
+				const bankName = row['ธนาคาร']?.trim();
+				const agencyName = row['หน่วยงาน']?.trim();
+				if (!accountName || !accountNumber || !bankName || !agencyName) { skipped++; continue; }
+
+				const bankId = bankMap.get(bankName);
+				const agencyId = agencyMap.get(agencyName);
+				if (!bankId || !agencyId) { skipped++; continue; }
+
+				const typeName = row['ประเภทบัญชี']?.trim();
+				const typeId = typeName ? typeMap.get(typeName) ?? null : null;
+				const isTaxPool = row['บัญชีภาษี']?.trim()?.toLowerCase();
+
+				await db.insert(bankAccounts).values({
+					agency_id: agencyId,
+					bank_id: bankId,
+					account_type_id: typeId,
+					account_name: accountName,
+					account_number: accountNumber,
+					balance: '0',
+					is_tax_pool: isTaxPool === 'ใช่' || isTaxPool === 'true'
+				});
+				created++;
+			}
+
+			const msg = `นำเข้าสำเร็จ ${created} บัญชี` + (skipped > 0 ? ` (ข้าม ${skipped} รายการ)` : '');
+			return { success: true, message: msg };
+		} catch (err) {
+			console.error('Import bank account CSV error:', err);
+			return fail(500, { success: false, errors: { csv: ['เกิดข้อผิดพลาดในการนำเข้า'] } });
 		}
 	},
 

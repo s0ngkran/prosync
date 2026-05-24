@@ -397,6 +397,7 @@ export type ApproveDikaInput = z.infer<typeof approveDikaSchema>;
 export const createBankAccountSchema = z.object({
 	agency_id: positiveId,
 	bank_id: positiveId,
+	account_type_id: optionalId,
 	account_name: requiredString('ชื่อบัญชี').pipe(z.string().max(255)),
 	account_number: requiredString('เลขที่บัญชี').pipe(
 		z.string().max(50).refine(

@@ -130,6 +130,11 @@ export const bank = pgTable('bank', {
 	logo_url: text('logo_url')
 });
 
+export const bankAccountTypes = pgTable('bank_account_types', {
+	id: serial('id').primaryKey(),
+	name: varchar('name', { length: 100 }).notNull()
+});
+
 export const bankAccounts = pgTable('bank_accounts', {
 	id: serial('id').primaryKey(),
 	agency_id: integer('agency_id')
@@ -138,6 +143,7 @@ export const bankAccounts = pgTable('bank_accounts', {
 	bank_id: integer('bank_id')
 		.notNull()
 		.references(() => bank.id),
+	account_type_id: integer('account_type_id').references(() => bankAccountTypes.id),
 	account_name: varchar('account_name', { length: 255 }).notNull(),
 	account_number: varchar('account_number', { length: 50 }).notNull(),
 	balance: numeric('balance', { precision: 15, scale: 2 }).notNull().default('0'),

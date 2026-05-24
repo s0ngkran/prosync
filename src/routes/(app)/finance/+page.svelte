@@ -54,6 +54,8 @@
 	// Filter states
 	let vendorTypeFilter = $state('');
 	let vendorSearch = $state('');
+	let showAccountTypeModal = $state(false);
+	let showAccountImportModal = $state(false);
 	let showVendorModal = $state(false);
 	let showVendorImportModal = $state(false);
 	let editingVendor = $state<any>(null);
@@ -310,7 +312,9 @@
 
 	{#if activeTab === 'accounts'}
 		{#if canManageFinance}
-			<div class="mt-4 flex justify-end">
+			<div class="mt-4 flex items-center gap-2 justify-end flex-wrap">
+				<button onclick={() => (showAccountTypeModal = true)} class="rounded-lg border px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50" style="border-color: oklch(0.82 0.015 180);">จัดการประเภทบัญชี</button>
+				<button onclick={() => (showAccountImportModal = true)} class="rounded-lg border px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50" style="border-color: oklch(0.82 0.015 180);">นำเข้า CSV</button>
 				<button onclick={() => (showCreateAccountModal = true)}
 					class="rounded-lg px-3 py-1.5 text-sm font-medium text-white"
 					style="background: oklch(0.52 0.14 240);">
@@ -334,9 +338,14 @@
 							<h3 class="font-medium text-gray-900">{account.account_name}</h3>
 							<p class="text-sm text-gray-500">{account.bank_name} | {account.account_number}</p>
 						</div>
-						{#if account.is_tax_pool}
-							<span class="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700 flex-shrink-0">บัญชีภาษี</span>
-						{/if}
+						<div class="flex items-center gap-2 flex-shrink-0">
+							{#if account.account_type_name}
+								<span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{account.account_type_name}</span>
+							{/if}
+							{#if account.is_tax_pool}
+								<span class="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700">บัญชีภาษี</span>
+							{/if}
+						</div>
 					</div>
 					<p class="mt-3 text-2xl font-bold text-gray-900">
 						{formatBaht(account.balance)}
@@ -728,6 +737,15 @@
 						/>
 					</div>
 					<div>
+						<label class="mb-1 block text-sm font-medium" style="color: oklch(0.35 0.02 180);">ประเภทบัญชี</label>
+						<CustomSelect
+							options={(data.bankAccountTypes ?? []).map((t: any) => ({ value: String(t.id), label: t.name }))}
+							name="account_type_id"
+							placeholder="-- ไม่ระบุ --"
+							class="w-full"
+						/>
+					</div>
+					<div>
 						<label class="mb-1 block text-sm font-medium" style="color: oklch(0.35 0.02 180);">ชื่อบัญชี</label>
 						<input name="account_name" required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: oklch(0.82 0.015 180);" placeholder="เช่น บัญชีเงินบำรุง" />
 					</div>
@@ -1111,6 +1129,72 @@
 				</div>
 				<div class="mt-6 flex justify-end gap-2">
 					<button type="button" onclick={() => (showVendorImportModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+					<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">นำเข้า</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- Bank Account Type Management Modal -->
+{#if showAccountTypeModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">จัดการประเภทบัญชี</h2>
+
+			<div class="mt-4 max-h-60 space-y-2 overflow-y-auto">
+				{#each data.bankAccountTypes ?? [] as t}
+					<div class="flex items-center justify-between rounded-lg border bg-gray-50 px-3 py-2">
+						<span class="text-sm">{t.name}</span>
+					</div>
+				{:else}
+					<p class="py-4 text-center text-sm text-gray-500">ยังไม่มีประเภทบัญชี</p>
+				{/each}
+			</div>
+
+			<form method="POST" action="?/createBankAccountType" use:enhance class="mt-4 flex gap-2">
+				<input name="name" required placeholder="ชื่อประเภทบัญชีใหม่" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+				<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">เพิ่ม</button>
+			</form>
+
+			<div class="mt-4 flex justify-end">
+				<button type="button" onclick={() => (showAccountTypeModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ปิด</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Bank Account Import CSV Modal -->
+{#if showAccountImportModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">นำเข้าบัญชีธนาคารจาก CSV</h2>
+			<p class="mt-1 text-sm text-gray-500">อัปโหลดไฟล์ CSV ที่มีข้อมูลบัญชีธนาคาร</p>
+
+			<div class="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+				<p class="text-xs text-gray-500 mb-2">คอลัมน์ที่รองรับ:</p>
+				<p class="text-xs text-gray-600 font-mono">ชื่อบัญชี*, เลขที่บัญชี*, ธนาคาร*, หน่วยงาน*, ประเภทบัญชี, บัญชีภาษี</p>
+				<p class="text-xs text-gray-400 mt-1">* = จำเป็น | ชื่อธนาคาร/หน่วยงาน/ประเภทต้องตรงกับที่มีในระบบ | บัญชีภาษี: ใช่/ไม่ใช่</p>
+				<button type="button" onclick={() => downloadCsvTemplate('bank-accounts',
+					['ชื่อบัญชี', 'เลขที่บัญชี', 'ธนาคาร', 'หน่วยงาน', 'ประเภทบัญชี', 'บัญชีภาษี'],
+					[
+						['บัญชีเงินบำรุง', '020-2-12345-6', 'ธนาคารกรุงไทย', 'โรงพยาบาลร้อยเอ็ด', 'บัญชีออมทรัพย์', 'ไม่ใช่'],
+						['บัญชีพักหักภาษี', '020-2-12345-7', 'ธนาคารกรุงไทย', 'โรงพยาบาลร้อยเอ็ด', 'บัญชีกระแสรายวัน', 'ใช่'],
+						['บัญชีงบประมาณ', '123-4-56789-0', 'ธนาคารกรุงเทพ', 'โรงพยาบาลร้อยเอ็ด', 'บัญชีออมทรัพย์', 'ไม่ใช่'],
+					]
+				)} class="mt-2 text-xs text-blue-600 hover:underline cursor-pointer">
+					ดาวน์โหลด Template CSV
+				</button>
+			</div>
+
+			<form method="POST" action="?/importBankAccountCsv" enctype="multipart/form-data" use:enhance={() => {
+				return async ({ update }) => { showAccountImportModal = false; await update(); };
+			}}>
+				<div class="mt-4">
+					<input name="csv_file" type="file" accept=".csv" required class="block w-full text-sm text-gray-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+				</div>
+				<div class="mt-6 flex justify-end gap-2">
+					<button type="button" onclick={() => (showAccountImportModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ยกเลิก</button>
 					<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">นำเข้า</button>
 				</div>
 			</form>
