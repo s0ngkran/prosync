@@ -220,8 +220,9 @@ export type UpdateOrgUnitInput = z.infer<typeof updateOrgUnitSchema>;
 // ──────────────────────────────────────────────
 
 export const createMedianPriceSchema = z.object({
-	category: requiredString('หมวดหมู่').pipe(z.string().max(100)),
+	category_id: positiveId,
 	item_name: requiredString('ชื่อรายการ').pipe(z.string().max(255)),
+	unit_id: optionalId,
 	price: monetaryAmount,
 	province_id: positiveId,
 	effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ไม่ถูกต้อง')
@@ -231,8 +232,9 @@ export type CreateMedianPriceInput = z.infer<typeof createMedianPriceSchema>;
 
 export const updateMedianPriceSchema = z.object({
 	id: positiveId,
-	category: requiredString('หมวดหมู่').pipe(z.string().max(100)),
+	category_id: positiveId,
 	item_name: requiredString('ชื่อรายการ').pipe(z.string().max(255)),
+	unit_id: optionalId,
 	price: monetaryAmount,
 	effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ไม่ถูกต้อง')
 });

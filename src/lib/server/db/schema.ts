@@ -31,10 +31,23 @@ export const agencies = pgTable('agencies', {
 		.references(() => provinces.id)
 });
 
+export const medianPriceCategories = pgTable('median_price_categories', {
+	id: serial('id').primaryKey(),
+	name: varchar('name', { length: 100 }).notNull()
+});
+
+export const medianPriceUnits = pgTable('median_price_units', {
+	id: serial('id').primaryKey(),
+	name: varchar('name', { length: 50 }).notNull()
+});
+
 export const medianPrices = pgTable('median_prices', {
 	id: serial('id').primaryKey(),
-	category: varchar('category', { length: 100 }).notNull(),
+	category_id: integer('category_id')
+		.notNull()
+		.references(() => medianPriceCategories.id),
 	item_name: varchar('item_name', { length: 255 }).notNull(),
+	unit_id: integer('unit_id').references(() => medianPriceUnits.id),
 	price: numeric('price', { precision: 15, scale: 2 }).notNull(),
 	province_id: integer('province_id')
 		.notNull()

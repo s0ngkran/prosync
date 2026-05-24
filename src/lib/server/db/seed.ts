@@ -826,28 +826,68 @@ async function seed() {
 	}
 
 	// ──────────────────────────────────────────
-	// 11. Median Prices (idempotent)
+	// 11a. Median Price Categories & Units (idempotent)
 	// ──────────────────────────────────────────
+	let mpCategories = await db.select().from(schema.medianPriceCategories);
+	if (mpCategories.length === 0) {
+		mpCategories = await db.insert(schema.medianPriceCategories).values([
+			{ name: 'เวชภัณฑ์' },
+			{ name: 'ครุภัณฑ์การแพทย์' },
+			{ name: 'วัสดุสำนักงาน' },
+			{ name: 'วัสดุการแพทย์' },
+			{ name: 'วัสดุงานบ้านงานครัว' },
+			{ name: 'ครุภัณฑ์สำนักงาน' },
+			{ name: 'ครุภัณฑ์คอมพิวเตอร์' }
+		]).returning();
+		console.log('✅ Median Price Categories seeded');
+	}
+
+	let mpUnits = await db.select().from(schema.medianPriceUnits);
+	if (mpUnits.length === 0) {
+		mpUnits = await db.insert(schema.medianPriceUnits).values([
+			{ name: 'ชิ้น' },
+			{ name: 'กล่อง' },
+			{ name: 'ลัง' },
+			{ name: 'เครื่อง' },
+			{ name: 'ชุด' },
+			{ name: 'รายการ' },
+			{ name: 'ขวด' },
+			{ name: 'แผ่น' },
+			{ name: 'ม้วน' },
+			{ name: 'รีม' }
+		]).returning();
+		console.log('✅ Median Price Units seeded');
+	}
+
+	// ──────────────────────────────────────────
+	// 11b. Median Prices (idempotent)
+	// ──────────────────────────────────────────
+	const catMap = Object.fromEntries(mpCategories.map((c) => [c.name, c.id]));
+	const unitMap = Object.fromEntries(mpUnits.map((u) => [u.name, u.id]));
+
 	const existingPrices = await db.select().from(schema.medianPrices);
 	if (existingPrices.length === 0) {
 		await db.insert(schema.medianPrices).values([
 			{
-				category: 'เวชภัณฑ์',
+				category_id: catMap['เวชภัณฑ์'],
 				item_name: 'ยาสามัญประจำโรงพยาบาล',
+				unit_id: unitMap['รายการ'],
 				price: '150000.00',
 				province_id: provinces[0].id,
 				effective_date: '2026-01-01'
 			},
 			{
-				category: 'ครุภัณฑ์การแพทย์',
+				category_id: catMap['ครุภัณฑ์การแพทย์'],
 				item_name: 'เครื่อง X-Ray ดิจิตอล',
+				unit_id: unitMap['เครื่อง'],
 				price: '3500000.00',
 				province_id: provinces[0].id,
 				effective_date: '2026-01-01'
 			},
 			{
-				category: 'วัสดุสำนักงาน',
-				item_name: 'กระดาษ A4 (ลัง)',
+				category_id: catMap['วัสดุสำนักงาน'],
+				item_name: 'กระดาษ A4',
+				unit_id: unitMap['ลัง'],
 				price: '850.00',
 				province_id: provinces[0].id,
 				effective_date: '2026-01-01'
