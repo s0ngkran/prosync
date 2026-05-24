@@ -4,37 +4,16 @@ import { provinces, agencies, fiscalYears } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { getMongoDb } from '$lib/server/db/mongodb';
 import { type AuditRecord, type AuditCollection, VALID_AUDIT_COLLECTIONS } from '$lib/server/validation/types';
+import { getAgencyScope } from '$lib/server/auth/scope';
 
-export const load: PageServerLoad = async ({ parent, url }) => {
+export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 	const { user } = await parent();
 	const collectionParam = url.searchParams.get('collection') || 'plan_budget_histories';
 	const collection: AuditCollection = VALID_AUDIT_COLLECTIONS.includes(collectionParam as AuditCollection)
 		? (collectionParam as AuditCollection)
 		: 'plan_budget_histories';
 
-	// Scope: super admin must select province+agency, others see own agency
-	let provincesList: { id: number; name: string }[] = [];
-	let agenciesList: { id: number; name: string; province_id: number }[] = [];
-	let selectedProvinceId: number | null = null;
-	let selectedAgencyId: number | null = null;
-
-	if (user.is_super_admin) {
-		provincesList = await db.select({ id: provinces.id, name: provinces.name }).from(provinces).orderBy(provinces.name);
-
-		const pidParam = url.searchParams.get('province_id');
-		if (pidParam) {
-			selectedProvinceId = Number(pidParam);
-			agenciesList = await db
-				.select({ id: agencies.id, name: agencies.name, province_id: agencies.province_id })
-				.from(agencies)
-				.where(eq(agencies.province_id, selectedProvinceId));
-		}
-
-		const aidParam = url.searchParams.get('agency_id');
-		if (aidParam) selectedAgencyId = Number(aidParam);
-	} else {
-		selectedAgencyId = user.agency_id;
-	}
+	const selectedAgencyId = getAgencyScope(user, cookies);
 
 	const actionType = url.searchParams.get('action_type') || null;
 	let records: AuditRecord[] = [];
@@ -88,9 +67,9 @@ export const load: PageServerLoad = async ({ parent, url }) => {
 		records,
 		collection,
 		fiscalYears: fyList,
-		provinces: provincesList,
-		agencies: agenciesList,
-		selectedProvinceId,
+		provinces: [] as { id: number; name: string }[],
+		agencies: [] as { id: number; name: string; province_id: number }[],
+		selectedProvinceId: null as number | null,
 		selectedAgencyId,
 		actionType
 	};

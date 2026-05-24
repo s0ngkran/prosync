@@ -1,18 +1,22 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { enhance } from '$app/forms';
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
 
 	let { data } = $props();
 
+	let selectedProvince = $state(data.selectedProvinceId ? String(data.selectedProvinceId) : '');
+	let selectedAgency = $state(data.selectedAgencyId ? String(data.selectedAgencyId) : '');
+	let scopeForm: HTMLFormElement;
+
 	function onProvinceChange(val: string) {
-		if (val) goto(`/org-management?province_id=${val}`);
-		else goto('/org-management');
+		selectedProvince = val;
+		selectedAgency = '';
+		scopeForm?.requestSubmit();
 	}
 
 	function onAgencyChange(val: string) {
-		if (val && data.selectedProvinceId) {
-			goto(`/org-management?province_id=${data.selectedProvinceId}&agency_id=${val}`);
-		}
+		selectedAgency = val;
+		scopeForm?.requestSubmit();
 	}
 
 	let agencyId = $derived(data.selectedAgencyId);
@@ -49,14 +53,6 @@
 	];
 
 	let cards = $derived(allCards.filter((c) => !c.requiresManage || canManage));
-
-	function cardHref(baseHref: string): string {
-		if (!agencyId) return baseHref;
-		const params = new URLSearchParams();
-		params.set('agency_id', String(agencyId));
-		if (data.selectedProvinceId) params.set('province_id', String(data.selectedProvinceId));
-		return `${baseHref}?${params.toString()}`;
-	}
 </script>
 
 <div class="page-container">
@@ -79,6 +75,10 @@
 
 	<!-- Scope Selector -->
 	{#if data.mode === 'super_admin'}
+		<form method="POST" action="?/selectScope" use:enhance bind:this={scopeForm} style="display:contents;">
+			<input type="hidden" name="province_id" value={selectedProvince} />
+			<input type="hidden" name="agency_id" value={selectedAgency} />
+		</form>
 		<div class="scope-bar">
 			<div class="scope-field">
 				<svg class="scope-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -129,7 +129,7 @@
 	{#if agencyId}
 		<div class="card-grid">
 			{#each cards as card, i}
-				<a href={cardHref(card.href)} class="nav-card" style="animation-delay: {i * 0.08}s;">
+				<a href={card.href} class="nav-card" style="animation-delay: {i * 0.08}s;">
 					<div class="card-icon-wrap" style="background: {card.accentBg};">
 						<svg class="card-icon" style="color: {card.accentColor};" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
 							<path stroke-linecap="round" stroke-linejoin="round" d={card.icon} />

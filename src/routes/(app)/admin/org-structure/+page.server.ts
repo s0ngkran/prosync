@@ -4,18 +4,10 @@ import { db } from '$lib/server/db';
 import { orgUnits, users, agencies } from '$lib/server/db/schema';
 import { eq, and, isNull, ne } from 'drizzle-orm';
 import { createOrgUnitSchema, updateOrgUnitSchema, parseFormData } from '$lib/server/validation/schemas';
+import { getAgencyScope } from '$lib/server/auth/scope';
 
-export const load: PageServerLoad = async ({ locals, url }) => {
-	// Determine agency scope
-	let agencyFilter: number | null = null;
-
-	if (locals.user?.is_super_admin) {
-		const aidParam = url.searchParams.get('agency_id');
-		if (aidParam) agencyFilter = Number(aidParam);
-	} else if (locals.user?.agency_id) {
-		// All non-super-admin users are scoped to their own agency
-		agencyFilter = locals.user.agency_id;
-	}
+export const load: PageServerLoad = async ({ locals, cookies }) => {
+	const agencyFilter = getAgencyScope(locals.user, cookies);
 
 	// Load org units (scoped by agency if applicable)
 	const unitsQuery = db

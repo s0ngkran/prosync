@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import { users, userAssignments, roles, orgUnits, agencies, hireTypes } from '$lib/server/db/schema';
 import { eq, and, isNull, like, or } from 'drizzle-orm';
 import { hashPassword } from '$lib/server/auth/password';
+import { getAgencyScope } from '$lib/server/auth/scope';
 import {
 	createUserSchema,
 	updateUserSchema,
@@ -12,17 +13,11 @@ import {
 	parseFormData
 } from '$lib/server/validation/schemas';
 
-export const load: PageServerLoad = async ({ url, locals }) => {
+export const load: PageServerLoad = async ({ url, locals, cookies }) => {
 	const search = url.searchParams.get('search') || '';
 
-	// Determine agency scope
-	let agencyFilter: number | null = null;
-	if (locals.user?.is_super_admin) {
-		const aidParam = url.searchParams.get('agency_id');
-		if (aidParam) agencyFilter = Number(aidParam);
-	} else if (locals.user?.is_director || locals.user?.permissions.can_manage_users) {
-		agencyFilter = locals.user.agency_id;
-	}
+	// Determine agency scope from session (not URL params)
+	const agencyFilter = getAgencyScope(locals.user, cookies);
 
 	// Build search + agency conditions
 	const conditions = [isNull(users.deleted_at)];

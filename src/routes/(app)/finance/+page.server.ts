@@ -19,6 +19,7 @@ import { writeAuditLog } from '$lib/server/db/audit';
 import { createNotification, markReadByDocument } from '$lib/server/notifications';
 import { users, orgUnits, documents, workflowSteps } from '$lib/server/db/schema';
 import { approveDikaSchema, createBankAccountSchema, createLoanSchema, approveLoanSchema, repayLoanSchema, parseFormData } from '$lib/server/validation/schemas';
+import { getAgencyScope } from '$lib/server/auth/scope';
 
 interface DikaRow {
 	id: number;
@@ -47,29 +48,10 @@ interface BankAccountRow {
 	bank_logo: string | null;
 }
 
-export const load: PageServerLoad = async ({ parent, url }) => {
+export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 	const { user } = await parent();
 
-	let provincesList: { id: number; name: string }[] = [];
-	let agencyList: { id: number; name: string; agency_type: string | null; province_id: number }[] = [];
-	let selectedProvinceId: number | null = null;
-	let agencyId: number | null = null;
-
-	if (user.is_super_admin) {
-		provincesList = await db.select({ id: provinces.id, name: provinces.name }).from(provinces).orderBy(provinces.name);
-		const pidParam = url.searchParams.get('province_id');
-		if (pidParam) {
-			selectedProvinceId = Number(pidParam);
-			agencyList = await db
-				.select({ id: agencies.id, name: agencies.name, agency_type: agencies.agency_type, province_id: agencies.province_id })
-				.from(agencies)
-				.where(eq(agencies.province_id, selectedProvinceId));
-		}
-		const aidParam = url.searchParams.get('agency_id');
-		if (aidParam) agencyId = Number(aidParam);
-	} else {
-		agencyId = user.agency_id;
-	}
+	const agencyId = getAgencyScope(user, cookies);
 
 	// Load all vendors (global, not agency-scoped)
 	const vendorList = await db.select().from(vendors);
@@ -162,9 +144,9 @@ export const load: PageServerLoad = async ({ parent, url }) => {
 		banks: bankList,
 		fiscalYears: fyList,
 		allAgencies,
-		provinces: provincesList,
-		agencies: agencyList,
-		selectedProvinceId,
+		provinces: [] as { id: number; name: string }[],
+		agencies: [] as any[],
+		selectedProvinceId: null as number | null,
 		selectedAgencyId: agencyId
 	};
 };

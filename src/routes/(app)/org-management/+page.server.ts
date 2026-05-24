@@ -1,14 +1,14 @@
 import { redirect } from '@sveltejs/kit';
-import type { PageServerLoad } from './$types';
+import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { provinces, agencies } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, cookies }) => {
 	if (!locals.user) throw redirect(303, '/login');
 	const { is_super_admin, is_director } = locals.user;
 
-	// Non-super-admin: auto-scope to their own agency (view-only for non-director/non-admin)
+	// Non-super-admin: auto-scope to their own agency
 	if (!is_super_admin) {
 		const agencyId = locals.user.agency_id;
 		if (!agencyId) throw redirect(303, '/dashboard');
@@ -18,12 +18,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			.from(agencies)
 			.where(eq(agencies.id, agencyId));
 
-		// canManage: only director or users with can_manage_users
 		const canManage = is_director || locals.user.permissions.can_manage_users;
 
 		return {
 			mode: canManage ? 'director' as const : 'viewer' as const,
 			selectedAgencyId: agencyId,
+			selectedProvinceId: null as number | null,
 			agencyName: agency?.name ?? '',
 			provinces: [],
 			agencies: [],
@@ -31,17 +31,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		};
 	}
 
-	// Super admin: province/agency selector
+	// Super admin: read from cookies
 	const provinceList = await db
 		.select({ id: provinces.id, name: provinces.name })
 		.from(provinces);
 
-	const selectedProvinceId = url.searchParams.get('province_id')
-		? Number(url.searchParams.get('province_id'))
+	const selectedProvinceId = cookies.get('sa_province')
+		? Number(cookies.get('sa_province'))
 		: null;
 
 	let agencyList: { id: number; name: string }[] = [];
-	let selectedAgencyId: number | null = null;
+	let selectedAgencyId: number | null = cookies.get('sa_agency')
+		? Number(cookies.get('sa_agency'))
+		: null;
 
 	if (selectedProvinceId) {
 		agencyList = await db
@@ -49,10 +51,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			.from(agencies)
 			.where(eq(agencies.province_id, selectedProvinceId));
 
-		const aidParam = url.searchParams.get('agency_id');
-		if (aidParam) {
-			selectedAgencyId = Number(aidParam);
+		// Validate the selected agency belongs to selected province
+		if (selectedAgencyId && !agencyList.some((a) => a.id === selectedAgencyId)) {
+			selectedAgencyId = null;
+			cookies.delete('sa_agency', { path: '/' });
 		}
+	} else {
+		// No province selected, clear agency too
+		selectedAgencyId = null;
 	}
 
 	return {
@@ -64,4 +70,27 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		agencyName: null,
 		canManage: true
 	};
+};
+
+export const actions: Actions = {
+	selectScope: async ({ request, cookies, locals }) => {
+		if (!locals.user?.is_super_admin) return;
+
+		const form = await request.formData();
+		const provinceId = form.get('province_id')?.toString() || '';
+		const agencyId = form.get('agency_id')?.toString() || '';
+
+		if (provinceId) {
+			cookies.set('sa_province', provinceId, { path: '/', httpOnly: true, maxAge: 60 * 60 * 24 });
+		} else {
+			cookies.delete('sa_province', { path: '/' });
+			cookies.delete('sa_agency', { path: '/' });
+		}
+
+		if (agencyId) {
+			cookies.set('sa_agency', agencyId, { path: '/', httpOnly: true, maxAge: 60 * 60 * 24 });
+		} else {
+			cookies.delete('sa_agency', { path: '/' });
+		}
+	}
 };

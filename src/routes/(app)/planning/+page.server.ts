@@ -5,6 +5,7 @@ import { plans, fiscalYears, agencies, orgUnits, provinces } from '$lib/server/d
 import { eq, and } from 'drizzle-orm';
 import { writeAuditLog } from '$lib/server/db/audit';
 import { createFiscalYearSchema, createPlanSchema, updatePlanSchema, parseFormData } from '$lib/server/validation/schemas';
+import { getAgencyScope } from '$lib/server/auth/scope';
 
 function calcDuration(startDate: string | null | undefined, endDate: string | null | undefined): string | null {
 	if (!startDate || !endDate) return null;
@@ -26,17 +27,11 @@ interface FiscalYearRow {
 	[key: string]: unknown;
 }
 
-export const load: PageServerLoad = async ({ parent, url }) => {
+export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 	const { user } = await parent();
 
-	// Province/agency selection for super admin
-	const selectedProvinceId = user.is_super_admin
-		? Number(url.searchParams.get('province_id')) || null
-		: null;
-
-	const agencyId = user.is_super_admin
-		? Number(url.searchParams.get('agency_id')) || null
-		: user.agency_id;
+	const agencyId = getAgencyScope(user, cookies);
+	const selectedProvinceId: number | null = null;
 
 	let fiscalYearList: FiscalYearRow[] = [];
 	let planList: typeof plans.$inferSelect[] = [];
