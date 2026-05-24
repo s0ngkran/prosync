@@ -2,7 +2,7 @@
 	import type { PageData } from './$types';
 	import { enhance } from '$app/forms';
 	import BackButton from '$lib/components/BackButton.svelte';
-	import { exportToCsv } from '$lib/utils/format';
+	import { exportToCsv, downloadCsvTemplate } from '$lib/utils/format';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
 
 	let { data, form }: { data: PageData; form: any } = $props();
@@ -13,6 +13,7 @@
 	let editName = $state('');
 	let editPermissions = $state<Record<string, Record<string, boolean>>>({});
 	let showCreateForm = $state(false);
+	let showImportModal = $state(false);
 	let searchQuery = $state('');
 	let filterGroup = $state('all');
 
@@ -166,6 +167,12 @@
 			</p>
 		</div>
 		<div class="header-actions">
+			<button onclick={() => (showImportModal = true)} class="btn-secondary">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+				</svg>
+				นำเข้า CSV
+			</button>
 			<button onclick={handleExportCsv} class="btn-secondary">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -302,6 +309,44 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Import CSV Modal -->
+{#if showImportModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">นำเข้าบทบาทจาก CSV</h2>
+			<p class="mt-1 text-sm text-gray-500">อัปโหลดไฟล์ CSV ที่มีข้อมูลบทบาท</p>
+
+			<div class="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+				<p class="text-xs text-gray-500 mb-2">คอลัมน์ที่รองรับ:</p>
+				<p class="text-xs text-gray-600 font-mono">ชื่อบทบาท*, สิทธิ์</p>
+				<p class="text-xs text-gray-400 mt-1">* = จำเป็น | คอลัมน์สิทธิ์ใส่ชื่อสิทธิ์คั่นด้วย , เช่น "จัดการผู้ใช้งาน, ดูแผนงาน"</p>
+				<button type="button" onclick={() => downloadCsvTemplate('roles', ['ชื่อบทบาท', 'สิทธิ์'])} class="mt-2 text-xs text-blue-600 hover:underline cursor-pointer">
+					ดาวน์โหลด Template CSV
+				</button>
+			</div>
+
+			<form method="POST" action="?/importCsv" enctype="multipart/form-data" use:enhance={() => {
+				return async ({ update }) => {
+					showImportModal = false;
+					await update();
+				};
+			}}>
+				<div class="mt-4">
+					<input name="csv_file" type="file" accept=".csv" required class="block w-full text-sm text-gray-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+				</div>
+				<div class="mt-6 flex justify-end gap-2">
+					<button type="button" onclick={() => (showImportModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+						ยกเลิก
+					</button>
+					<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+						นำเข้า
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.page-container {

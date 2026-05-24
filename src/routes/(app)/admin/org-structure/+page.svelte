@@ -2,12 +2,24 @@
 	import { enhance } from '$app/forms';
 	import BackButton from '$lib/components/BackButton.svelte';
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
+	import { downloadCsvTemplate, exportToCsv } from '$lib/utils/format';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
 
 	let { data, form: formResult } = $props();
 
 	watchFormResult(() => formResult);
 	let showCreateModal = $state(false);
+	let showImportModal = $state(false);
+
+	function handleExportCsv() {
+		exportToCsv('org-structure', [
+			{ key: 'id', label: 'ID' },
+			{ key: 'name', label: 'ชื่อแผนก' },
+			{ key: 'agency_id', label: 'หน่วยงาน_id' },
+			{ key: 'parent_id', label: 'แผนกแม่_id' },
+			{ key: 'head_name', label: 'หัวหน้า' }
+		], data.units);
+	}
 	let editingUnit = $state<any>(null);
 	let searchQuery = $state('');
 	let collapsed = $state(new Set<number>());
@@ -135,14 +147,30 @@
 				<span class="unit-count">{data.units.length} หน่วยงาน</span>
 			</p>
 		</div>
-		{#if canManage}
-			<button onclick={() => (showCreateModal = true)} class="btn-primary">
+		<div style="display: flex; gap: 10px; flex-shrink: 0;">
+			{#if canManage}
+				<button onclick={() => (showImportModal = true)} class="btn-secondary">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+					</svg>
+					นำเข้า CSV
+				</button>
+			{/if}
+			<button onclick={handleExportCsv} class="btn-secondary">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+					<path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 				</svg>
-				สร้างแผนก
+				ส่งออก CSV
 			</button>
-		{/if}
+			{#if canManage}
+				<button onclick={() => (showCreateModal = true)} class="btn-primary">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+					</svg>
+					สร้างแผนก
+				</button>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Toast notifications handled by global Toast component -->
@@ -248,6 +276,40 @@
 	</div>
 {/if}
 
+<!-- Import CSV Modal -->
+{#if showImportModal}
+	<div class="modal-backdrop" onclick={() => (showImportModal = false)}>
+		<div class="modal-card" onclick={(e) => e.stopPropagation()}>
+			<h2 class="modal-title">นำเข้าโครงสร้างองค์กรจาก CSV</h2>
+			<p style="margin: 4px 0 0; font-size: 0.8125rem; color: oklch(0.5 0.02 180);">อัปโหลดไฟล์ CSV ที่มีข้อมูลแผนก/กอง</p>
+
+			<div style="margin-top: 12px; padding: 14px; border-radius: 10px; border: 1px dashed oklch(0.82 0.015 180); background: oklch(0.98 0.005 180);">
+				<p style="margin: 0 0 6px; font-size: 0.75rem; color: oklch(0.5 0.02 180);">คอลัมน์ที่รองรับ:</p>
+				<p style="margin: 0; font-size: 0.75rem; font-family: monospace; color: oklch(0.35 0.02 180);">ชื่อแผนก*, หน่วยงาน_id*, แผนกแม่_id, หัวหน้า_id</p>
+				<p style="margin: 4px 0 0; font-size: 0.6875rem; color: oklch(0.6 0.02 180);">* = จำเป็น | แผนกที่ซ้ำในระดับเดียวกันจะถูกข้าม</p>
+				<button type="button" onclick={() => downloadCsvTemplate('org-structure', ['ชื่อแผนก', 'หน่วยงาน_id', 'แผนกแม่_id', 'หัวหน้า_id'])} style="margin-top: 8px; font-size: 0.75rem; color: oklch(0.42 0.12 240); background: none; border: none; cursor: pointer; text-decoration: underline;">
+					ดาวน์โหลด Template CSV
+				</button>
+			</div>
+
+			<form method="POST" action="?/importCsv" enctype="multipart/form-data" use:enhance={() => {
+				return async ({ update }) => {
+					showImportModal = false;
+					await update();
+				};
+			}}>
+				<div style="margin-top: 16px;">
+					<input name="csv_file" type="file" accept=".csv" required style="font-size: 0.875rem;" />
+				</div>
+				<div class="modal-footer">
+					<button type="button" onclick={() => (showImportModal = false)} class="btn-ghost">ยกเลิก</button>
+					<button type="submit" class="btn-primary">นำเข้า</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
 <style>
 	.page-container {
 		animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
@@ -305,6 +367,16 @@
 	}
 
 	.btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+
+	.btn-secondary {
+		display: inline-flex; align-items: center; gap: 6px;
+		padding: 8px 16px; border-radius: 10px;
+		border: 1px solid oklch(0.88 0.01 180);
+		background: oklch(0.98 0.005 180); color: oklch(0.35 0.02 180);
+		font-size: 0.875rem; font-weight: 500; cursor: pointer;
+		transition: background 0.15s ease;
+	}
+	.btn-secondary:hover { background: oklch(0.95 0.005 180); }
 
 	.btn-ghost {
 		padding: 8px 16px;

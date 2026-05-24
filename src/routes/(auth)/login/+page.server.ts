@@ -23,15 +23,14 @@ export const actions: Actions = {
 		const input = identifier.trim();
 
 		try {
-			// Lookup by id_card, email, or phone
+			// Lookup by id_card or email
 			const [user] = await db
 				.select()
 				.from(users)
 				.where(and(
 					or(
 						eq(users.id_card, input),
-						eq(users.email, input),
-						eq(users.phone, input)
+						eq(users.email, input)
 					),
 					isNull(users.deleted_at)
 				));
@@ -104,6 +103,7 @@ export const actions: Actions = {
 				agency_id: user.agency_id,
 				is_super_admin: user.is_super_admin,
 				is_director: isDirector,
+				must_change_password: user.must_change_password,
 				profile_completed: user.profile_completed,
 				primary_org_unit_id: primaryOrgUnitId,
 				permissions: merged

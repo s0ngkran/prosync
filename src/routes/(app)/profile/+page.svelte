@@ -13,6 +13,10 @@
 	let editPhone = $state(data.profile.phone || '');
 
 	let canEditRank = $derived(!data.user.is_director && !data.user.is_super_admin);
+	let showChangePassword = $state(false);
+	let showOld = $state(false);
+	let showNew = $state(false);
+	let showConfirm = $state(false);
 
 	function startEdit() {
 		editName = data.profile.name;
@@ -164,6 +168,79 @@
 			</div>
 		</section>
 	</div>
+
+	<!-- ======== CHANGE PASSWORD ======== -->
+	<div class="grid" style="margin-top: 16px;">
+		<section class="card" style="grid-column: 1 / -1;">
+			<div class="card-top orange">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+				<span>เปลี่ยนรหัสผ่าน</span>
+			</div>
+			<div class="card-body">
+				{#if showChangePassword}
+					<form method="POST" action="?/changePassword" use:enhance={() => {
+						return async ({ update, result }) => {
+							if (result.type === 'success') showChangePassword = false;
+							await update();
+						};
+					}}>
+						<div class="f-grid">
+							<div class="f">
+								<label for="old_password">รหัสผ่านปัจจุบัน</label>
+								<div class="pw-field">
+									<input id="old_password" name="old_password" type={showOld ? 'text' : 'password'} required placeholder="กรอกรหัสผ่านปัจจุบัน" />
+									<button type="button" class="pw-toggle" tabindex="-1" onclick={() => showOld = !showOld}>
+										{#if showOld}ซ่อน{:else}แสดง{/if}
+									</button>
+								</div>
+								{#if formResult?.errors?.old_password}
+									<small class="err">{formResult.errors.old_password[0]}</small>
+								{/if}
+							</div>
+							<div class="f-row">
+								<div class="f">
+									<label for="new_password">รหัสผ่านใหม่</label>
+									<div class="pw-field">
+										<input id="new_password" name="new_password" type={showNew ? 'text' : 'password'} required minlength="6" placeholder="อย่างน้อย 6 ตัวอักษร" />
+										<button type="button" class="pw-toggle" tabindex="-1" onclick={() => showNew = !showNew}>
+											{#if showNew}ซ่อน{:else}แสดง{/if}
+										</button>
+									</div>
+									{#if (formResult?.errors as any)?.new_password}
+										<small class="err">{(formResult.errors as any).new_password[0]}</small>
+									{/if}
+								</div>
+								<div class="f">
+									<label for="confirm_password">ยืนยันรหัสผ่านใหม่</label>
+									<div class="pw-field">
+										<input id="confirm_password" name="confirm_password" type={showConfirm ? 'text' : 'password'} required minlength="6" placeholder="กรอกรหัสผ่านอีกครั้ง" />
+										<button type="button" class="pw-toggle" tabindex="-1" onclick={() => showConfirm = !showConfirm}>
+											{#if showConfirm}ซ่อน{:else}แสดง{/if}
+										</button>
+									</div>
+									{#if (formResult?.errors as any)?.confirm_password}
+										<small class="err">{(formResult.errors as any).confirm_password[0]}</small>
+									{/if}
+								</div>
+							</div>
+						</div>
+						<div class="f-actions">
+							<button type="button" class="btn-ghost" onclick={() => (showChangePassword = false)}>ยกเลิก</button>
+							<button type="submit" class="btn-primary">บันทึกรหัสผ่านใหม่</button>
+						</div>
+					</form>
+				{:else}
+					<div style="display: flex; align-items: center; justify-content: space-between;">
+						<p style="margin: 0; font-size: .8125rem; color: #78909c;">คุณสามารถเปลี่ยนรหัสผ่านได้โดยกรอกรหัสผ่านปัจจุบัน</p>
+						<button class="btn-edit" onclick={() => (showChangePassword = true)}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 15px; height: 15px;"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" /></svg>
+							เปลี่ยนรหัสผ่าน
+						</button>
+					</div>
+				{/if}
+			</div>
+		</section>
+	</div>
 </div>
 
 <style>
@@ -296,6 +373,7 @@
 	.card-top span { flex: 1; }
 	.card-top.blue { background: linear-gradient(135deg, #1565c0, #1976d2, #2196f3); }
 	.card-top.green { background: linear-gradient(135deg, #00695c, #00897b, #009688); }
+	.card-top.orange { background: linear-gradient(135deg, #e65100, #f57c00, #ff9800); }
 
 	.card-body { padding: 20px; }
 
@@ -328,6 +406,17 @@
 	.f input:focus { outline: none; border-color: #1976d2; box-shadow: 0 0 0 3px rgba(25,118,210,.1); }
 	.f input.ro { background: #eceff1; color: #90a4ae; cursor: not-allowed; }
 	.f small { font-size: .6875rem; color: #90a4ae; }
+	.f small.err { color: #e53935; }
+
+	.pw-field { position: relative; }
+	.pw-field input { width: 100%; padding-right: 52px; }
+	.pw-toggle {
+		position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+		padding: 4px 8px; border: none; background: none;
+		font-size: .7rem; color: #78909c; cursor: pointer;
+		font-family: inherit; border-radius: 4px;
+	}
+	.pw-toggle:hover { background: #eceff1; color: #455a64; }
 
 	.f-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 	.btn-ghost {

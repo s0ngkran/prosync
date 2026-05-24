@@ -8,6 +8,7 @@ export interface JWTPayload {
 	is_super_admin: boolean;
 	is_director: boolean;
 	primary_org_unit_id: number | null;
+	must_change_password: boolean;
 	profile_completed: boolean;
 	permissions: {
 		can_manage_users: boolean;

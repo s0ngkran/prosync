@@ -49,7 +49,7 @@
 					<fieldset disabled={loading} class="fields">
 						<div class="field">
 							<label for="identifier">บัญชีผู้ใช้</label>
-							<input id="identifier" name="identifier" type="text" placeholder="เลขบัตรประชาชน, อีเมล หรือเบอร์โทร" autocomplete="username" required />
+							<input id="identifier" name="identifier" type="text" placeholder="เลขบัตรประชาชน หรือ อีเมล" autocomplete="username" required />
 						</div>
 
 						<div class="field">

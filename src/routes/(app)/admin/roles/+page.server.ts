@@ -14,6 +14,18 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
 	audit: { can_view_audit_trail: false }
 };
 
+const PERM_LABELS: Record<string, Record<string, string>> = {
+	system: { can_manage_users: 'จัดการผู้ใช้งาน', can_manage_org_units: 'จัดการโครงสร้างองค์กร' },
+	planning: { can_view_plan: 'ดูแผนงาน', can_create_plan: 'สร้างแผน', can_edit_plan: 'แก้ไขแผน', can_delete_plan: 'ลบแผน' },
+	procurement: { can_view_document: 'ดูเอกสารจัดซื้อ', can_create_document: 'สร้างเอกสารจัดซื้อ', can_approve_document: 'อนุมัติเอกสารจัดซื้อ' },
+	finance: { can_view_dika: 'ดูฎีกาเบิกจ่าย', can_create_dika: 'สร้างฎีกาเบิกจ่าย', can_approve_dika: 'อนุมัติฎีกาเบิกจ่าย' },
+	audit: { can_view_audit_trail: 'ดูประวัติการเปลี่ยนแปลง' }
+};
+
+function getLabelForPerm(group: string, key: string): string | undefined {
+	return PERM_LABELS[group]?.[key];
+}
+
 function parsePermissions(formData: FormData): RolePermissions {
 	const permissions = structuredClone(DEFAULT_PERMISSIONS);
 
@@ -76,6 +88,58 @@ export const actions: Actions = {
 		} catch (err) {
 			console.error('Update role error:', err);
 			return fail(500, { success: false, errors: { name: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });
+		}
+	},
+
+	importCsv: async ({ request }) => {
+		const formData = await request.formData();
+		const file = formData.get('csv_file') as File | null;
+
+		if (!file || file.size === 0) {
+			return fail(400, { success: false, errors: { csv: ['กรุณาเลือกไฟล์ CSV'] } });
+		}
+
+		try {
+			const text = await file.text();
+			const { parseCsv } = await import('$lib/utils/format');
+			const rows = parseCsv(text);
+
+			if (rows.length === 0) {
+				return fail(400, { success: false, errors: { csv: ['ไฟล์ CSV ว่างเปล่า'] } });
+			}
+
+			let created = 0;
+			const permKeys = Object.values(DEFAULT_PERMISSIONS);
+
+			for (const row of rows) {
+				const name = row['ชื่อบทบาท']?.trim();
+				if (!name) continue;
+
+				// Parse permissions from CSV columns
+				const permissions = structuredClone(DEFAULT_PERMISSIONS);
+				const permString = row['สิทธิ์']?.trim() || '';
+
+				if (permString) {
+					// Match permission labels to actual permission keys
+					for (const [group, groupDef] of Object.entries(permissions)) {
+						for (const key of Object.keys(groupDef)) {
+							// Check if the Thai label appears in the permission string
+							const label = getLabelForPerm(group, key);
+							if (label && permString.includes(label)) {
+								(permissions[group as keyof typeof permissions] as Record<string, boolean>)[key] = true;
+							}
+						}
+					}
+				}
+
+				await db.insert(roles).values({ name, permissions });
+				created++;
+			}
+
+			return { success: true, message: `นำเข้าสำเร็จ ${created} บทบาท` };
+		} catch (err) {
+			console.error('Import CSV error:', err);
+			return fail(500, { success: false, errors: { csv: ['เกิดข้อผิดพลาดในการนำเข้า'] } });
 		}
 	},
 

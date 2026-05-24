@@ -17,6 +17,7 @@ async function buildJWTPayload(userId: number): Promise<JWTPayload | null> {
 			profile_picture: users.profile_picture,
 			agency_id: users.agency_id,
 			is_super_admin: users.is_super_admin,
+			must_change_password: users.must_change_password,
 			profile_completed: users.profile_completed
 		})
 		.from(users)
@@ -78,6 +79,7 @@ async function buildJWTPayload(userId: number): Promise<JWTPayload | null> {
 		agency_id: user.agency_id,
 		is_super_admin: user.is_super_admin,
 		is_director: isDirector,
+		must_change_password: user.must_change_password,
 		profile_completed: user.profile_completed,
 		primary_org_unit_id: primaryOrgUnitId,
 		permissions: merged
@@ -131,7 +133,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		throw redirect(303, '/dashboard');
 	}
 
-	// 5. Redirect to profile completion if not completed (skip for super admins and the complete-profile page itself)
+	// 5. Force change password if must_change_password is true
+	if (
+		event.locals.user &&
+		(event.locals.user.must_change_password ?? false) &&
+		!event.url.pathname.startsWith('/change-password') &&
+		!event.url.pathname.startsWith('/api/auth')
+	) {
+		throw redirect(303, '/change-password');
+	}
+
+	// 6. Redirect to profile completion if not completed (skip for super admins and the complete-profile page itself)
 	if (
 		event.locals.user &&
 		!event.locals.user.is_super_admin &&
@@ -142,7 +154,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		throw redirect(303, '/complete-profile');
 	}
 
-	// 6. RBAC path checks (skip for super admin)
+	// 7. RBAC path checks (skip for super admin)
 	if (event.locals.user && !event.locals.user.is_super_admin) {
 		const path = event.url.pathname;
 		const perms = event.locals.user.permissions;

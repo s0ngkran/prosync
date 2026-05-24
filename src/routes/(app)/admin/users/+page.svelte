@@ -4,7 +4,7 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import BackButton from '$lib/components/BackButton.svelte';
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
-	import { exportToCsv } from '$lib/utils/format';
+	import { exportToCsv, downloadCsvTemplate } from '$lib/utils/format';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
 
 	let { data, form } = $props();
@@ -12,8 +12,10 @@
 	watchFormResult(() => form);
 	let searchQuery = $state(data.search || '');
 	let showCreateModal = $state(false);
+	let showImportModal = $state(false);
 	let editingUser = $state<any>(null);
 	let assigningUser = $state<any>(null);
+	let resettingUser = $state<any>(null);
 	let currentPage = $state(1);
 	const perPage = 20;
 
@@ -49,6 +51,9 @@
 			<p style="margin: 0; font-size: 0.875rem; color: oklch(0.5 0.02 180);">ค้นหา เพิ่ม แก้ไข ลบ ผู้ใช้งาน และจัดการสิทธิ์</p>
 		</div>
 		<div style="display: flex; gap: 10px; flex-shrink: 0;">
+			<button onclick={() => (showImportModal = true)} style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 10px; border: 1px solid oklch(0.88 0.01 180); background: oklch(0.98 0.005 180); color: oklch(0.35 0.02 180); font-size: 0.875rem; font-weight: 500; cursor: pointer;">
+				นำเข้า CSV
+			</button>
 			<button onclick={handleExportCsv} style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 10px; border: 1px solid oklch(0.88 0.01 180); background: oklch(0.98 0.005 180); color: oklch(0.35 0.02 180); font-size: 0.875rem; font-weight: 500; cursor: pointer;">
 				ส่งออก CSV
 			</button>
@@ -134,6 +139,12 @@
 								>
 									จัดสิทธิ์
 								</button>
+								<button
+									onclick={() => (resettingUser = user)}
+									class="rounded px-2 py-1 text-xs text-orange-600 hover:bg-orange-50"
+								>
+									รีเซ็ตรหัส
+								</button>
 								<form method="POST" action="?/delete" use:enhance>
 									<input type="hidden" name="id" value={user.id} />
 									<button type="submit" class="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50">
@@ -161,10 +172,16 @@
 					await update();
 				};
 			}}>
-				<div class="mt-4 space-y-3">
-					<div>
-						<label class="block text-sm font-medium text-gray-700">ชื่อ-สกุล <span class="text-red-500">*</span></label>
-						<input name="name" required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+				<div class="mt-4 space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+					<div class="grid grid-cols-3 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">คำนำหน้า</label>
+							<input name="prefix" placeholder="เช่น นายแพทย์" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+						<div class="col-span-2">
+							<label class="block text-sm font-medium text-gray-700">ชื่อ-สกุล <span class="text-red-500">*</span></label>
+							<input name="name" required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
 					</div>
 					<div>
 						<label class="block text-sm font-medium text-gray-700">เลขบัตรประชาชน <span class="text-red-500">*</span></label>
@@ -176,6 +193,7 @@
 					<div>
 						<label class="block text-sm font-medium text-gray-700">รหัสผ่าน <span class="text-red-500">*</span></label>
 						<input name="password" type="password" required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						<p class="mt-1 text-xs text-gray-400">ผู้ใช้จะถูกบังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก</p>
 					</div>
 					<div>
 						<label class="block text-sm font-medium text-gray-700">หน่วยงาน</label>
@@ -194,6 +212,26 @@
 					<div>
 						<label class="block text-sm font-medium text-gray-700">อีเมล</label>
 						<input name="email" type="email" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">วันเกิด</label>
+							<input name="birth" type="date" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700">วันบรรจุ</label>
+							<input name="hire_date" type="date" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">ประเภทบรรจุ</label>
+							<CustomSelect name="hire_type_id" options={data.hireTypes.map(h => ({ value: String(h.id), label: h.name }))} placeholder="-- ไม่ระบุ --" class="mt-1" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700">แผนก/กอง</label>
+							<CustomSelect name="division_id" options={data.orgUnits.map(u => ({ value: String(u.id), label: u.name }))} placeholder="-- ไม่ระบุ --" class="mt-1" />
+						</div>
 					</div>
 				</div>
 				<div class="mt-6 flex justify-end gap-2">
@@ -221,10 +259,16 @@
 				};
 			}}>
 				<input type="hidden" name="id" value={editingUser.id} />
-				<div class="mt-4 space-y-3">
-					<div>
-						<label class="block text-sm font-medium text-gray-700">ชื่อ-สกุล</label>
-						<input name="name" value={editingUser.name} required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+				<div class="mt-4 space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+					<div class="grid grid-cols-3 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">คำนำหน้า</label>
+							<input name="prefix" value={editingUser.prefix || ''} placeholder="เช่น นายแพทย์" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+						<div class="col-span-2">
+							<label class="block text-sm font-medium text-gray-700">ชื่อ-สกุล</label>
+							<input name="name" value={editingUser.name} required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
 					</div>
 					<div>
 						<label class="block text-sm font-medium text-gray-700">หน่วยงาน</label>
@@ -243,6 +287,26 @@
 					<div>
 						<label class="block text-sm font-medium text-gray-700">อีเมล</label>
 						<input name="email" type="email" value={editingUser.email || ''} class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">วันเกิด</label>
+							<input name="birth" type="date" value={editingUser.birth ? new Date(editingUser.birth).toISOString().split('T')[0] : ''} class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700">วันบรรจุ</label>
+							<input name="hire_date" type="date" value={editingUser.hire_date ? new Date(editingUser.hire_date).toISOString().split('T')[0] : ''} class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+						</div>
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700">ประเภทบรรจุ</label>
+							<CustomSelect name="hire_type_id" options={data.hireTypes.map(h => ({ value: String(h.id), label: h.name }))} value={editingUser.hire_type_id ? String(editingUser.hire_type_id) : ''} placeholder="-- ไม่ระบุ --" class="mt-1" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700">แผนก/กอง</label>
+							<CustomSelect name="division_id" options={data.orgUnits.map(u => ({ value: String(u.id), label: u.name }))} value={editingUser.division_id ? String(editingUser.division_id) : ''} placeholder="-- ไม่ระบุ --" class="mt-1" />
+						</div>
 					</div>
 				</div>
 				<div class="mt-6 flex justify-end gap-2">
@@ -315,6 +379,75 @@
 					</button>
 					<button type="submit" class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
 						เพิ่มสิทธิ์
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- Reset Password Modal -->
+{#if resettingUser}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">รีเซ็ตรหัสผ่าน</h2>
+			<p class="mt-1 text-sm text-gray-500">ตั้งรหัสผ่านใหม่ให้ <strong>{resettingUser.name}</strong></p>
+			<form method="POST" action="?/resetPassword" use:enhance={() => {
+				return async ({ update }) => {
+					resettingUser = null;
+					await update();
+				};
+			}}>
+				<input type="hidden" name="user_id" value={resettingUser.id} />
+				<div class="mt-4">
+					<label class="block text-sm font-medium text-gray-700">รหัสผ่านใหม่ <span class="text-red-500">*</span></label>
+					<input name="new_password" type="password" required minlength="6" placeholder="อย่างน้อย 6 ตัวอักษร" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+					<p class="mt-1 text-xs text-gray-400">ผู้ใช้จะถูกบังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งถัดไป</p>
+				</div>
+				<div class="mt-6 flex justify-end gap-2">
+					<button type="button" onclick={() => (resettingUser = null)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+						ยกเลิก
+					</button>
+					<button type="submit" class="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">
+						รีเซ็ตรหัสผ่าน
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- Import CSV Modal -->
+{#if showImportModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+		<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+			<h2 class="text-lg font-bold text-gray-900">นำเข้าผู้ใช้งานจาก CSV</h2>
+			<p class="mt-1 text-sm text-gray-500">อัปโหลดไฟล์ CSV ที่มีข้อมูลผู้ใช้งาน</p>
+
+			<div class="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+				<p class="text-xs text-gray-500 mb-2">คอลัมน์ที่รองรับ (header ภาษาไทย):</p>
+				<p class="text-xs text-gray-600 font-mono">ชื่อ-สกุล*, เลขบัตรประชาชน*, รหัสผ่าน, คำนำหน้า, ยศ/คำนำหน้า, ระดับตำแหน่ง, อีเมล, เบอร์โทร, วันเกิด, วันบรรจุ, หน่วยงาน_id, ประเภทบรรจุ_id, แผนก_id</p>
+				<p class="text-xs text-gray-400 mt-1">* = จำเป็น | ถ้าไม่ระบุรหัสผ่าน จะใช้ 6 หลักสุดท้ายของเลขบัตร</p>
+				<button type="button" onclick={() => downloadCsvTemplate('users', ['ชื่อ-สกุล', 'เลขบัตรประชาชน', 'รหัสผ่าน', 'คำนำหน้า', 'ยศ/คำนำหน้า', 'ระดับตำแหน่ง', 'อีเมล', 'เบอร์โทร', 'วันเกิด', 'วันบรรจุ', 'หน่วยงาน_id', 'ประเภทบรรจุ_id', 'แผนก_id'])} class="mt-2 text-xs text-blue-600 hover:underline cursor-pointer">
+					ดาวน์โหลด Template CSV
+				</button>
+			</div>
+
+			<form method="POST" action="?/importCsv" enctype="multipart/form-data" use:enhance={() => {
+				return async ({ update }) => {
+					showImportModal = false;
+					await update();
+				};
+			}}>
+				<div class="mt-4">
+					<input name="csv_file" type="file" accept=".csv" required class="block w-full text-sm text-gray-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+				</div>
+				<div class="mt-6 flex justify-end gap-2">
+					<button type="button" onclick={() => (showImportModal = false)} class="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+						ยกเลิก
+					</button>
+					<button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+						นำเข้า
 					</button>
 				</div>
 			</form>

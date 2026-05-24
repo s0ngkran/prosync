@@ -3,6 +3,8 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { users, agencies, orgUnits, userAssignments, roles } from '$lib/server/db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
+import { verifyPassword, hashPassword } from '$lib/server/auth/password';
+import { changePasswordSchema, parseFormData } from '$lib/server/validation/schemas';
 
 export const load: PageServerLoad = async ({ parent }) => {
 	const { user } = await parent();
@@ -100,6 +102,42 @@ export const actions: Actions = {
 		} catch (err) {
 			console.error('Update profile error:', err);
 			return fail(500, { error: 'เกิดข้อผิดพลาด' });
+		}
+	},
+
+	changePassword: async ({ request, locals }) => {
+		if (!locals.user) return fail(401, { error: 'ไม่ได้เข้าสู่ระบบ' });
+
+		const parsed = parseFormData(changePasswordSchema, await request.formData());
+		if (!parsed.success) {
+			return fail(400, { success: false, errors: parsed.errors });
+		}
+
+		const { old_password, new_password } = parsed.data;
+
+		try {
+			const [user] = await db
+				.select({ password_hash: users.password_hash })
+				.from(users)
+				.where(eq(users.id, locals.user.sub));
+
+			if (!user) return fail(400, { success: false, errors: { old_password: ['ไม่พบผู้ใช้'] } });
+
+			const valid = await verifyPassword(user.password_hash, old_password);
+			if (!valid) {
+				return fail(400, { success: false, errors: { old_password: ['รหัสผ่านปัจจุบันไม่ถูกต้อง'] } });
+			}
+
+			const password_hash = await hashPassword(new_password);
+			await db
+				.update(users)
+				.set({ password_hash, updated_at: new Date() })
+				.where(eq(users.id, locals.user.sub));
+
+			return { success: true, message: 'เปลี่ยนรหัสผ่านสำเร็จ' };
+		} catch (err) {
+			console.error('Change password error:', err);
+			return fail(500, { success: false, errors: { old_password: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });
 		}
 	},
 

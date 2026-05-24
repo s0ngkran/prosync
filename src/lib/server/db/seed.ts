@@ -182,6 +182,26 @@ async function seed() {
 	console.log('🌱 Seeding database...');
 
 	// ──────────────────────────────────────────
+	// 0. Hire Types (idempotent)
+	// ──────────────────────────────────────────
+	let hireTypeList = await db.select().from(schema.hireTypes);
+	if (hireTypeList.length === 0) {
+		hireTypeList = await db
+			.insert(schema.hireTypes)
+			.values([
+				{ name: 'ข้าราชการ' },
+				{ name: 'พนักงานราชการ' },
+				{ name: 'ลูกจ้างประจำ' },
+				{ name: 'พนักงานจ้างตามภารกิจ' },
+				{ name: 'พนักงานจ้างทั่วไป' }
+			])
+			.returning();
+		console.log('✅ Hire types seeded');
+	} else {
+		console.log('ℹ️  Hire types already exist');
+	}
+
+	// ──────────────────────────────────────────
 	// 1. Provinces (idempotent)
 	// ──────────────────────────────────────────
 	let provinces = await db.select().from(schema.provinces);
@@ -361,6 +381,7 @@ async function seed() {
 			name: 'ผู้ดูแลระบบสูงสุด',
 			email: 'admin@prosync.go.th',
 			is_super_admin: true,
+			must_change_password: false,
 			profile_completed: true
 		});
 		console.log('✅ Super Admin created (email: admin@prosync.go.th, password: admin1234)');
@@ -688,6 +709,7 @@ async function seed() {
 					email: nu.email,
 					phone: `08${randomInt(10000000, 99999999)}`,
 					is_super_admin: false,
+					must_change_password: false,
 					profile_completed: true
 				})
 				.returning();
@@ -751,6 +773,7 @@ async function seed() {
 						email: `user${existingCount + createdNamedUsers.length + i + 1}@hospital.go.th`,
 						phone: `08${randomInt(10000000, 99999999)}`,
 						is_super_admin: false,
+						must_change_password: false,
 						profile_completed: true
 					})
 					.returning();

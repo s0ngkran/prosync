@@ -46,20 +46,34 @@ export const medianPrices = pgTable('median_prices', {
 // Organization & IAM
 // ──────────────────────────────────────────────
 
+export const hireTypes = pgTable('hire_types', {
+	id: serial('id').primaryKey(),
+	name: varchar('name', { length: 100 }).notNull()
+});
+
 export const users = pgTable('users', {
 	id: serial('id').primaryKey(),
+	prefix: varchar('prefix', { length: 50 }),
+	name: varchar('name', { length: 255 }).notNull(),
+	birth: timestamp('birth', { withTimezone: true }),
+	hire_date: timestamp('hire_date', { withTimezone: true }),
+	hire_type_id: integer('hire_type_id').references(() => hireTypes.id),
 	password_hash: varchar('password_hash', { length: 255 }).notNull(),
 	agency_id: integer('agency_id').references(() => agencies.id),
 	id_card: varchar('id_card', { length: 13 }).notNull().unique(),
 	position: varchar('position', { length: 50 }),
 	position_rank: varchar('position_rank', { length: 255 }),
-	name: varchar('name', { length: 255 }).notNull(),
+	division_id: integer('division_id'),
 	email: varchar('email', { length: 255 }),
 	phone: varchar('phone', { length: 20 }),
+	status: varchar('status', { length: 20 }).notNull().default('active'),
 	is_super_admin: boolean('is_super_admin').notNull().default(false),
+	must_change_password: boolean('must_change_password').notNull().default(true),
 	profile_completed: boolean('profile_completed').notNull().default(false),
 	profile_picture: text('profile_picture'),
-	deleted_at: timestamp('deleted_at', { withTimezone: true })
+	deleted_at: timestamp('deleted_at', { withTimezone: true }),
+	created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 
 export const orgUnits = pgTable('org_units', {

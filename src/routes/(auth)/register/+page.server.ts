@@ -44,7 +44,8 @@ export const actions: Actions = {
 					email: email || null,
 					position: position || null,
 					position_rank: position_rank || null,
-					is_super_admin: false
+					is_super_admin: false,
+					must_change_password: false
 				})
 				.returning();
 
@@ -95,6 +96,7 @@ export const actions: Actions = {
 				agency_id: newUser.agency_id,
 				is_super_admin: newUser.is_super_admin,
 				is_director: false,
+				must_change_password: false,
 				profile_completed: false,
 				primary_org_unit_id: primaryOrgUnitId,
 				permissions: merged

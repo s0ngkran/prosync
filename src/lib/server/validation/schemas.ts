@@ -40,7 +40,7 @@ const monetaryAmount = z.coerce
 // ──────────────────────────────────────────────
 
 export const loginSchema = z.object({
-	identifier: requiredString('เลขบัตรประชาชน, อีเมล หรือเบอร์โทร'),
+	identifier: requiredString('เลขบัตรประชาชน หรือ อีเมล'),
 	password: requiredString('รหัสผ่าน')
 });
 
@@ -73,11 +73,44 @@ export const completeProfileSchema = z.object({
 
 export type CompleteProfileInput = z.infer<typeof completeProfileSchema>;
 
+export const forceChangePasswordSchema = z.object({
+	new_password: requiredString('รหัสผ่านใหม่').pipe(z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร')),
+	confirm_password: requiredString('ยืนยันรหัสผ่าน')
+}).refine((data) => data.new_password === data.confirm_password, {
+	message: 'รหัสผ่านไม่ตรงกัน',
+	path: ['confirm_password']
+});
+
+export type ForceChangePasswordInput = z.infer<typeof forceChangePasswordSchema>;
+
+export const changePasswordSchema = z.object({
+	old_password: requiredString('รหัสผ่านปัจจุบัน'),
+	new_password: requiredString('รหัสผ่านใหม่').pipe(z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร')),
+	confirm_password: requiredString('ยืนยันรหัสผ่าน')
+}).refine((data) => data.new_password === data.confirm_password, {
+	message: 'รหัสผ่านไม่ตรงกัน',
+	path: ['confirm_password']
+});
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+	user_id: positiveId,
+	new_password: requiredString('รหัสผ่านใหม่').pipe(z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'))
+});
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
 // ──────────────────────────────────────────────
 // Users
 // ──────────────────────────────────────────────
 
+const optionalDate2 = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ไม่ถูกต้อง')
+	.nullable().optional()
+	.or(z.literal('').transform(() => null));
+
 export const createUserSchema = z.object({
+	prefix: optionalString,
 	name: requiredString('ชื่อ-สกุล').pipe(z.string().max(255, 'ชื่อต้องไม่เกิน 255 ตัวอักษร')),
 	id_card: thaiIdCard,
 	password: requiredString('รหัสผ่าน').pipe(z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร')),
@@ -85,19 +118,28 @@ export const createUserSchema = z.object({
 	position: optionalString,
 	position_rank: optionalString,
 	email: z.string().email('รูปแบบอีเมลไม่ถูกต้อง').nullable().optional()
-		.or(z.literal('').transform(() => null))
+		.or(z.literal('').transform(() => null)),
+	birth: optionalDate2,
+	hire_date: optionalDate2,
+	hire_type_id: optionalId,
+	division_id: optionalId
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 export const updateUserSchema = z.object({
 	id: positiveId,
+	prefix: optionalString,
 	name: requiredString('ชื่อ-สกุล').pipe(z.string().max(255)),
 	agency_id: optionalId,
 	position: optionalString,
 	position_rank: optionalString,
 	email: z.string().email('รูปแบบอีเมลไม่ถูกต้อง').nullable().optional()
-		.or(z.literal('').transform(() => null))
+		.or(z.literal('').transform(() => null)),
+	birth: optionalDate2,
+	hire_date: optionalDate2,
+	hire_type_id: optionalId,
+	division_id: optionalId
 });
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;

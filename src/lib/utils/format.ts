@@ -73,6 +73,67 @@ export const STATUS_LABELS: Record<string, string> = {
 	SUBMITTED: 'ส่งแล้ว'
 };
 
+/** Parse CSV text เป็น array of objects โดยใช้ header row แรกเป็น keys */
+export function parseCsv(text: string): Record<string, string>[] {
+	// Remove BOM if present
+	const clean = text.replace(/^\uFEFF/, '');
+	const lines = clean.split(/\r?\n/).filter((l) => l.trim() !== '');
+	if (lines.length < 2) return [];
+
+	const parseRow = (line: string): string[] => {
+		const result: string[] = [];
+		let current = '';
+		let inQuotes = false;
+		for (let i = 0; i < line.length; i++) {
+			const ch = line[i];
+			if (inQuotes) {
+				if (ch === '"') {
+					if (line[i + 1] === '"') {
+						current += '"';
+						i++;
+					} else {
+						inQuotes = false;
+					}
+				} else {
+					current += ch;
+				}
+			} else if (ch === '"') {
+				inQuotes = true;
+			} else if (ch === ',') {
+				result.push(current.trim());
+				current = '';
+			} else {
+				current += ch;
+			}
+		}
+		result.push(current.trim());
+		return result;
+	};
+
+	const headers = parseRow(lines[0]);
+	return lines.slice(1).map((line) => {
+		const values = parseRow(line);
+		const obj: Record<string, string> = {};
+		headers.forEach((h, i) => {
+			obj[h] = values[i] ?? '';
+		});
+		return obj;
+	});
+}
+
+/** ดาวน์โหลด CSV template สำหรับ import */
+export function downloadCsvTemplate(filename: string, headers: string[]): void {
+	const BOM = '\uFEFF';
+	const csv = BOM + headers.map((h) => `"${h}"`).join(',');
+	const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement('a');
+	link.href = url;
+	link.download = `${filename}_template.csv`;
+	link.click();
+	URL.revokeObjectURL(url);
+}
+
 /** Export ข้อมูลเป็น CSV และดาวน์โหลด */
 export function exportToCsv(
 	filename: string,

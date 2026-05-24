@@ -152,6 +152,71 @@ export const actions: Actions = {
 		}
 	},
 
+	importCsv: async ({ request }) => {
+		const formData = await request.formData();
+		const file = formData.get('csv_file') as File | null;
+
+		if (!file || file.size === 0) {
+			return fail(400, { success: false, errors: { csv: ['กรุณาเลือกไฟล์ CSV'] } });
+		}
+
+		try {
+			const text = await file.text();
+			const { parseCsv } = await import('$lib/utils/format');
+			const rows = parseCsv(text);
+
+			if (rows.length === 0) {
+				return fail(400, { success: false, errors: { csv: ['ไฟล์ CSV ว่างเปล่า'] } });
+			}
+
+			let created = 0;
+			let skipped = 0;
+
+			for (let i = 0; i < rows.length; i++) {
+				const row = rows[i];
+				const name = row['ชื่อแผนก']?.trim();
+				const agency_id = row['หน่วยงาน_id'] ? Number(row['หน่วยงาน_id']) : null;
+
+				if (!name || !agency_id) {
+					skipped++;
+					continue;
+				}
+
+				const parent_id = row['แผนกแม่_id'] ? Number(row['แผนกแม่_id']) : null;
+
+				// Check duplicate name within same level
+				const parentCondition = parent_id
+					? eq(orgUnits.parent_id, parent_id)
+					: isNull(orgUnits.parent_id);
+				const [duplicate] = await db
+					.select({ id: orgUnits.id })
+					.from(orgUnits)
+					.where(and(eq(orgUnits.name, name), eq(orgUnits.agency_id, agency_id), parentCondition))
+					.limit(1);
+
+				if (duplicate) {
+					skipped++;
+					continue;
+				}
+
+				await db.insert(orgUnits).values({
+					name,
+					agency_id,
+					parent_id,
+					head_of_unit_id: row['หัวหน้า_id'] ? Number(row['หัวหน้า_id']) : null
+				});
+
+				created++;
+			}
+
+			const msg = `นำเข้าสำเร็จ ${created} แผนก` + (skipped > 0 ? ` (ข้าม ${skipped} รายการ)` : '');
+			return { success: true, message: msg };
+		} catch (err) {
+			console.error('Import CSV error:', err);
+			return fail(500, { success: false, errors: { csv: ['เกิดข้อผิดพลาดในการนำเข้า'] } });
+		}
+	},
+
 	delete: async ({ request }) => {
 		const form = await request.formData();
 		const id = Number(form.get('id'));
