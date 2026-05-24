@@ -11,6 +11,7 @@
 	watchFormResult(() => formResult);
 	let showCreateModal = $state(false);
 	let showImportModal = $state(false);
+	let createParentId = $state<number | null>(null);
 
 	function handleExportCsv() {
 		exportToCsv('org-structure', [
@@ -104,6 +105,11 @@
 				<!-- Actions (only for managers) -->
 				{#if canManage}
 				<div class="node-actions">
+					<button onclick={() => { createParentId = node.id; showCreateModal = true; }} class="action-btn add-btn" title="เพิ่มหน่วยย่อย">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+						</svg>
+					</button>
 					<button onclick={() => (editingUnit = node)} class="action-btn edit-btn">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -164,7 +170,7 @@
 				ส่งออก CSV
 			</button>
 			{#if canManage}
-				<button onclick={() => (showCreateModal = true)} class="btn-primary">
+				<button onclick={() => { createParentId = null; showCreateModal = true; }} class="btn-primary">
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
 					</svg>
@@ -212,32 +218,42 @@
 
 <!-- Create Modal -->
 {#if showCreateModal}
+{@const createParentUnit = createParentId ? data.units.find((u: any) => u.id === createParentId) : null}
 	<div class="modal-backdrop" onclick={() => (showCreateModal = false)}>
 		<div class="modal-card" onclick={(e) => e.stopPropagation()}>
-			<h2 class="modal-title">สร้างแผนกใหม่</h2>
+			<h2 class="modal-title">{createParentUnit ? `เพิ่มหน่วยย่อยภายใต้ "${createParentUnit.name}"` : 'สร้างแผนกใหม่'}</h2>
 			<form method="POST" action="?/create" use:enhance={() => {
-				return async ({ update }) => { showCreateModal = false; await update(); };
+				return async ({ update }) => { showCreateModal = false; createParentId = null; await update(); };
 			}}>
 				<div class="modal-body">
 					<div class="form-field">
 						<label class="form-label">ชื่อแผนก <span class="required">*</span></label>
-						<input name="name" required class="form-input" placeholder="เช่น ศัลยกรรมทั่วไป" />
+						<input name="name" required class="form-input" placeholder={createParentUnit ? `เช่น หน่วยย่อยของ ${createParentUnit.name}` : 'เช่น ศัลยกรรมทั่วไป'} />
 					</div>
-					<div class="form-field">
-						<label class="form-label">หน่วยงาน <span class="required">*</span></label>
-						<CustomSelect name="agency_id" required options={data.agencies.map(a => ({ value: String(a.id), label: a.name }))} placeholder="-- เลือกหน่วยงาน --" class="mt-1" />
-					</div>
-					<div class="form-field">
-						<label class="form-label">แผนกแม่ (Parent)</label>
-						<CustomSelect name="parent_id" options={data.units.map(u => ({ value: String(u.id), label: u.name }))} placeholder="-- ระดับสูงสุด (Root) --" class="mt-1" />
-					</div>
+					{#if createParentUnit}
+						<input type="hidden" name="agency_id" value={createParentUnit.agency_id} />
+						<input type="hidden" name="parent_id" value={createParentUnit.id} />
+						<div class="form-field">
+							<label class="form-label">สังกัด</label>
+							<div class="form-readonly">{createParentUnit.name}</div>
+						</div>
+					{:else}
+						<div class="form-field">
+							<label class="form-label">หน่วยงาน <span class="required">*</span></label>
+							<CustomSelect name="agency_id" required options={data.agencies.map((a: any) => ({ value: String(a.id), label: a.name }))} placeholder="-- เลือกหน่วยงาน --" class="mt-1" />
+						</div>
+						<div class="form-field">
+							<label class="form-label">แผนกแม่ (Parent)</label>
+							<CustomSelect name="parent_id" options={data.units.map((u: any) => ({ value: String(u.id), label: u.name }))} placeholder="-- ระดับสูงสุด (Root) --" class="mt-1" />
+						</div>
+					{/if}
 					<div class="form-field">
 						<label class="form-label">หัวหน้าหน่วยงาน</label>
-						<CustomSelect name="head_of_unit_id" options={data.users.map(u => ({ value: String(u.id), label: u.name }))} placeholder="-- ไม่ระบุ --" class="mt-1" />
+						<CustomSelect name="head_of_unit_id" options={data.users.map((u: any) => ({ value: String(u.id), label: u.name }))} placeholder="-- ไม่ระบุ --" class="mt-1" />
 					</div>
 				</div>
 				<div class="modal-footer">
-					<button type="button" onclick={() => (showCreateModal = false)} class="btn-ghost">ยกเลิก</button>
+					<button type="button" onclick={() => { showCreateModal = false; createParentId = null; }} class="btn-ghost">ยกเลิก</button>
 					<button type="submit" class="btn-primary">บันทึก</button>
 				</div>
 			</form>
@@ -603,6 +619,14 @@
 
 	.edit-btn { color: oklch(0.52 0.14 240); }
 	.edit-btn:hover { background: oklch(0.52 0.14 240 / 0.08); }
+	.add-btn { color: oklch(0.54 0.16 150); }
+	.add-btn:hover { background: oklch(0.54 0.16 150 / 0.08); }
+
+	.form-readonly {
+		padding: 10px 14px; border-radius: 10px;
+		background: oklch(0.97 0.005 180); border: 1px solid oklch(0.9 0.005 180);
+		font-size: 0.9375rem; color: oklch(0.45 0.02 180);
+	}
 
 	.delete-btn { color: oklch(0.58 0.2 25); }
 	.delete-btn:hover { background: oklch(0.58 0.2 25 / 0.08); }
