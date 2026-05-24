@@ -45,32 +45,30 @@
 			: orgUnits
 	);
 
-	function updateUrl() {
-		const params = new URLSearchParams();
-		if (provinceId) params.set('province_id', String(provinceId));
-		if (agencyId) params.set('agency_id', String(agencyId));
-		if (orgUnitId) params.set('org_unit_id', String(orgUnitId));
-
-		const queryString = params.toString();
-		goto(`${basePath}${queryString ? `?${queryString}` : ''}`, { replaceState: true });
+	async function saveScope() {
+		const form = new FormData();
+		form.set('province_id', provinceId ? String(provinceId) : '');
+		form.set('agency_id', agencyId ? String(agencyId) : '');
+		await fetch('/org-management?/selectScope', { method: 'POST', body: form });
+		// Reload current page to pick up new cookie values
+		location.reload();
 	}
 
 	function handleProvinceChange(val: string) {
 		provinceId = val ? parseInt(val) : null;
 		agencyId = null;
 		orgUnitId = null;
-		updateUrl();
+		saveScope();
 	}
 
 	function handleAgencyChange(val: string) {
 		agencyId = val ? parseInt(val) : null;
 		orgUnitId = null;
-		updateUrl();
+		saveScope();
 	}
 
 	function handleOrgUnitChange(val: string) {
 		orgUnitId = val ? parseInt(val) : null;
-		updateUrl();
 	}
 
 	let provinceOptions = $derived(

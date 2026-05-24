@@ -19,18 +19,17 @@ import {
 import { eq, and, count, isNull, desc, sql, asc } from "drizzle-orm";
 import type { ChartData } from "$lib/types/dashboard";
 
-export const load: PageServerLoad = async ({ parent, url }) => {
+export const load: PageServerLoad = async ({ parent, url, cookies }) => {
   const { user } = await parent();
 
-  // Get filter params from URL
-  let provinceId = url.searchParams.get("province_id");
-  let agencyId = url.searchParams.get("agency_id");
-  const orgUnitId = url.searchParams.get("org_unit_id");
+  // Get scope from cookies (not URL params)
+  const { getAgencyScope, getProvinceScope } = await import("$lib/server/auth/scope");
+  const scopeAgencyId = getAgencyScope(user, cookies);
+  const scopeProvinceId = getProvinceScope(user, cookies);
 
-  // Non-super-admin: auto-scope to their own agency (no scope selector)
-  if (!user.is_super_admin && user.agency_id) {
-    agencyId = String(user.agency_id);
-  }
+  let provinceId = scopeProvinceId ? String(scopeProvinceId) : null;
+  let agencyId = scopeAgencyId ? String(scopeAgencyId) : null;
+  const orgUnitId = url.searchParams.get("org_unit_id");
 
   // Load provinces for selector
   const provincesList = await db

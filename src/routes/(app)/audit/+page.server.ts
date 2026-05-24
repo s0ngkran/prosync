@@ -4,7 +4,7 @@ import { provinces, agencies, fiscalYears } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { getMongoDb } from '$lib/server/db/mongodb';
 import { type AuditRecord, type AuditCollection, VALID_AUDIT_COLLECTIONS } from '$lib/server/validation/types';
-import { getAgencyScope } from '$lib/server/auth/scope';
+import { getAgencyScope, loadScopeData } from '$lib/server/auth/scope';
 
 export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 	const { user } = await parent();
@@ -67,10 +67,7 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 		records,
 		collection,
 		fiscalYears: fyList,
-		provinces: [] as { id: number; name: string }[],
-		agencies: [] as { id: number; name: string; province_id: number }[],
-		selectedProvinceId: null as number | null,
-		selectedAgencyId,
+		...(await loadScopeData(user, cookies, db, provinces, agencies, eq)),
 		actionType
 	};
 };

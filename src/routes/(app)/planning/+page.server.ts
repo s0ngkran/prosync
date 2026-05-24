@@ -31,15 +31,17 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 	const { user } = await parent();
 
 	const agencyId = getAgencyScope(user, cookies);
-	const selectedProvinceId: number | null = null;
 
 	let fiscalYearList: FiscalYearRow[] = [];
 	let planList: typeof plans.$inferSelect[] = [];
 	let agencyList: { id: number; name: string }[] = [];
 	let provinceList: { id: number; name: string }[] = [];
+	let selectedProvinceId: number | null = null;
 
 	if (user.is_super_admin) {
 		provinceList = await db.select({ id: provinces.id, name: provinces.name }).from(provinces);
+		const provCookie = cookies.get('sa_province');
+		selectedProvinceId = provCookie ? Number(provCookie) : null;
 		if (selectedProvinceId) {
 			agencyList = await db
 				.select({ id: agencies.id, name: agencies.name })

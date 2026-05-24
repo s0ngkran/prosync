@@ -341,7 +341,13 @@
 					value={data.selectedProvinceId ? String(data.selectedProvinceId) : ''}
 					options={data.provinces.map((p) => ({ value: String(p.id), label: p.name }))}
 					placeholder="-- จังหวัด --"
-					onchange={(v) => goto(v ? `/planning?province_id=${v}` : '/planning')}
+					onchange={async (v) => {
+						const form = new FormData();
+						form.set('province_id', v || '');
+						form.set('agency_id', '');
+						await fetch('/org-management?/selectScope', { method: 'POST', body: form });
+						location.reload();
+					}}
 					class="shrink-0 max-w-[10rem]"
 				/>
 				<CustomSelect
@@ -349,7 +355,14 @@
 					options={data.agencies.map((a) => ({ value: String(a.id), label: a.name }))}
 					placeholder={data.selectedProvinceId && data.agencies.length === 0 ? '-- ไม่มีหน่วยงาน --' : '-- หน่วยงาน --'}
 					disabled={!data.selectedProvinceId}
-					onchange={(v) => { if (v && data.selectedProvinceId) goto(`/planning?province_id=${data.selectedProvinceId}&agency_id=${v}`); }}
+					onchange={async (v) => {
+						if (!v) return;
+						const form = new FormData();
+						form.set('province_id', String(data.selectedProvinceId || ''));
+						form.set('agency_id', v);
+						await fetch('/org-management?/selectScope', { method: 'POST', body: form });
+						location.reload();
+					}}
 					class="shrink-0 max-w-[12rem]"
 				/>
 			{/if}

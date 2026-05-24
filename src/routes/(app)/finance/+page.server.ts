@@ -19,7 +19,7 @@ import { writeAuditLog } from '$lib/server/db/audit';
 import { createNotification, markReadByDocument } from '$lib/server/notifications';
 import { users, orgUnits, documents, workflowSteps } from '$lib/server/db/schema';
 import { approveDikaSchema, createBankAccountSchema, createLoanSchema, approveLoanSchema, repayLoanSchema, parseFormData } from '$lib/server/validation/schemas';
-import { getAgencyScope } from '$lib/server/auth/scope';
+import { getAgencyScope, loadScopeData } from '$lib/server/auth/scope';
 
 interface DikaRow {
 	id: number;
@@ -177,9 +177,7 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 		bankAccountTypes: bankAccountTypeList,
 		fiscalYears: fyList,
 		allAgencies,
-		provinces: [] as { id: number; name: string }[],
-		agencies: [] as any[],
-		selectedProvinceId: null as number | null,
+		...(await loadScopeData(user, cookies, db, provinces, agencies, eq)),
 		selectedAgencyId: agencyId
 	};
 };

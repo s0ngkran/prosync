@@ -1,22 +1,22 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
 
 	let { data } = $props();
 
-	let selectedProvince = $state(data.selectedProvinceId ? String(data.selectedProvinceId) : '');
-	let selectedAgency = $state(data.selectedAgencyId ? String(data.selectedAgencyId) : '');
-	let scopeForm: HTMLFormElement;
+	async function saveScope(provinceId: string, agencyId: string) {
+		const form = new FormData();
+		form.set('province_id', provinceId);
+		form.set('agency_id', agencyId);
+		await fetch('/org-management?/selectScope', { method: 'POST', body: form });
+		location.reload();
+	}
 
 	function onProvinceChange(val: string) {
-		selectedProvince = val;
-		selectedAgency = '';
-		scopeForm?.requestSubmit();
+		saveScope(val, '');
 	}
 
 	function onAgencyChange(val: string) {
-		selectedAgency = val;
-		scopeForm?.requestSubmit();
+		saveScope(data.selectedProvinceId ? String(data.selectedProvinceId) : '', val);
 	}
 
 	let agencyId = $derived(data.selectedAgencyId);
@@ -75,10 +75,6 @@
 
 	<!-- Scope Selector -->
 	{#if data.mode === 'super_admin'}
-		<form method="POST" action="?/selectScope" use:enhance bind:this={scopeForm} style="display:contents;">
-			<input type="hidden" name="province_id" value={selectedProvince} />
-			<input type="hidden" name="agency_id" value={selectedAgency} />
-		</form>
 		<div class="scope-bar">
 			<div class="scope-field">
 				<svg class="scope-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">

@@ -12,7 +12,7 @@ import {
 } from '$lib/server/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 import { createDocumentSchema, parseFormData } from '$lib/server/validation/schemas';
-import { getAgencyScope } from '$lib/server/auth/scope';
+import { getAgencyScope, loadScopeData } from '$lib/server/auth/scope';
 
 export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 	const { user } = await parent();
@@ -74,9 +74,7 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 		workflowSteps: stepsList,
 		leafPlans: leafPlanList,
 		fiscalYears: fyList,
-		provinces: [] as { id: number; name: string }[],
-		agencies: [] as any[],
-		selectedProvinceId: null as number | null,
+		...(await loadScopeData(user, cookies, db, provinces, agencies, eq)),
 		selectedAgencyId: agencyId
 	};
 };
