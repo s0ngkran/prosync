@@ -3,30 +3,25 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
 	documents,
-	workflows,
-	workflowSteps,
 	plans,
 	fiscalYears,
 	agencies,
-	provinces
+	provinces,
+	documentApprovalSteps,
+	users,
+	orgUnits
 } from '$lib/server/db/schema';
-import { eq, and, asc, inArray } from 'drizzle-orm';
-import { createDocumentSchema, parseFormData } from '$lib/server/validation/schemas';
+import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import { getAgencyScope, loadScopeData } from '$lib/server/auth/scope';
 
-export const load: PageServerLoad = async ({ parent, url, cookies }) => {
+export const load: PageServerLoad = async ({ parent, cookies }) => {
 	const { user } = await parent();
-
 	const agencyId = getAgencyScope(user, cookies);
-
-	const workflowList = await db.select().from(workflows);
-	const stepsList = await db.select().from(workflowSteps);
 
 	let documentList: any[] = [];
 	let leafPlanList: any[] = [];
-
-	// Load fiscal years for filtering
-	let fyList: { id: number; year_name: string; is_active: boolean }[] = [];
+	let fyList: any[] = [];
+	let pendingTasks: any[] = [];
 
 	if (agencyId) {
 		fyList = await db
@@ -34,61 +29,48 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 			.from(fiscalYears)
 			.where(eq(fiscalYears.agency_id, agencyId));
 
-		// Legacy documents (with workflow_id)
+		// Load v2 documents (with doc_type set)
 		documentList = await db
 			.select({
 				id: documents.id, slug: documents.slug,
 				agency_id: documents.agency_id,
-				workflow_id: documents.workflow_id,
-				workflow_name: workflows.name,
 				plan_id: documents.plan_id,
 				plan_title: plans.title,
 				fiscal_year_id: plans.fiscal_year_id,
-				current_step_id: documents.current_step_id,
-				payload: documents.payload,
 				status: documents.status,
 				doc_type: documents.doc_type,
 				procurement_method: documents.procurement_method,
-				phase: documents.phase
+				phase: documents.phase,
+				updated_by: documents.updated_by
 			})
 			.from(documents)
-			.innerJoin(workflows, eq(documents.workflow_id, workflows.id))
 			.innerJoin(plans, eq(documents.plan_id, plans.id))
-			.where(eq(documents.agency_id, agencyId))
-			.orderBy(asc(documents.id));
+			.where(and(eq(documents.agency_id, agencyId), eq(documents.phase, 'APPROVAL')))
+			.orderBy(desc(documents.id));
 
-		// V2 execution-phase documents (type1/2/3 only, no workflow_id)
-		const v2Docs = await db
+		// Also load EXECUTION/COMPLETED documents for reference
+		const otherDocs = await db
 			.select({
 				id: documents.id, slug: documents.slug,
 				agency_id: documents.agency_id,
-				workflow_id: documents.workflow_id,
 				plan_id: documents.plan_id,
 				plan_title: plans.title,
 				fiscal_year_id: plans.fiscal_year_id,
-				current_step_id: documents.current_step_id,
-				payload: documents.payload,
 				status: documents.status,
 				doc_type: documents.doc_type,
 				procurement_method: documents.procurement_method,
-				phase: documents.phase
+				phase: documents.phase,
+				updated_by: documents.updated_by
 			})
 			.from(documents)
 			.innerJoin(plans, eq(documents.plan_id, plans.id))
 			.where(and(
 				eq(documents.agency_id, agencyId),
-				eq(documents.phase, 'EXECUTION'),
-				inArray(documents.doc_type, ['type1_nParcel', 'type2_iParcelUtil', 'type3_iParcel'])
+				inArray(documents.phase, ['EXECUTION', 'COMPLETED'])
 			))
-			.orderBy(asc(documents.id));
+			.orderBy(desc(documents.id));
 
-		// Merge, avoiding duplicates
-		const existingIds = new Set(documentList.map((d: any) => d.id));
-		for (const d of v2Docs) {
-			if (!existingIds.has(d.id)) {
-				documentList.push({ ...d, workflow_name: null });
-			}
-		}
+		documentList = [...documentList, ...otherDocs];
 
 		leafPlanList = await db
 			.select({
@@ -102,15 +84,50 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 			.from(plans)
 			.innerJoin(fiscalYears, eq(plans.fiscal_year_id, fiscalYears.id))
 			.where(and(eq(plans.agency_id, agencyId), eq(plans.is_leaf_node, true)));
+
+		// Load pending approval tasks for current user
+		const allApprovalSteps = await db
+			.select({
+				id: documentApprovalSteps.id,
+				document_id: documentApprovalSteps.document_id,
+				step_sequence: documentApprovalSteps.step_sequence,
+				step_code: documentApprovalSteps.step_code,
+				step_name: documentApprovalSteps.step_name,
+				assigned_user_id: documentApprovalSteps.assigned_user_id,
+				status: documentApprovalSteps.status,
+				created_at: documentApprovalSteps.created_at
+			})
+			.from(documentApprovalSteps)
+			.where(and(
+				eq(documentApprovalSteps.assigned_user_id, user.sub),
+				eq(documentApprovalSteps.status, 'IN_PROGRESS')
+			));
+
+		// Enrich with document info
+		for (const step of allApprovalSteps) {
+			const doc = documentList.find((d: any) => d.id === step.document_id);
+			if (doc) {
+				pendingTasks.push({
+					...step,
+					document_slug: doc.slug,
+					plan_title: doc.plan_title,
+					doc_type: doc.doc_type
+				});
+			}
+		}
 	}
+
+	const orgUnitList = agencyId
+		? await db.select().from(orgUnits).where(eq(orgUnits.agency_id, agencyId))
+		: [];
 
 	return {
 		user,
 		documents: documentList,
-		workflows: workflowList,
-		workflowSteps: stepsList,
 		leafPlans: leafPlanList,
 		fiscalYears: fyList,
+		pendingTasks,
+		orgUnits: orgUnitList,
 		...(await loadScopeData(user, cookies, db, provinces, agencies, eq)),
 		selectedAgencyId: agencyId
 	};
@@ -118,57 +135,6 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 
 export const actions: Actions = {
 	createDocument: async ({ request, locals }) => {
-		const parsed = parseFormData(createDocumentSchema, await request.formData());
-		if (!parsed.success) {
-			return fail(400, { success: false, errors: parsed.errors });
-		}
-
-		try {
-			const { agency_id, workflow_id, plan_id } = parsed.data;
-
-			const existing = await db
-				.select()
-				.from(documents)
-				.where(and(eq(documents.plan_id, plan_id), eq(documents.status, 'IN_PROGRESS')));
-
-			if (existing.length > 0) {
-				return fail(400, {
-					success: false,
-					errors: { plan_id: [`เอกสารนี้อยู่ระหว่างดำเนินการ [#${existing[0].id}]`] }
-				});
-			}
-
-			const [firstStep] = await db
-				.select()
-				.from(workflowSteps)
-				.where(and(eq(workflowSteps.workflow_id, workflow_id), eq(workflowSteps.step_sequence, 1)));
-
-			const { generateSlug } = await import('$lib/server/utils');
-			const [newDoc] = await db.insert(documents).values({
-				slug: generateSlug(),
-				agency_id,
-				workflow_id,
-				plan_id,
-				current_step_id: firstStep?.id || null,
-				payload: {},
-				status: 'IN_PROGRESS',
-				updated_by: locals.user?.sub || null
-			}).returning();
-
-			// Auto-assign step 1 to the creator and notify them
-			if (firstStep && locals.user?.sub && newDoc) {
-				const { assignAndNotify } = await import('$lib/server/step-assignments');
-				await assignAndNotify(newDoc.id, firstStep.id, agency_id, firstStep.step_name);
-			}
-
-			return { success: true, message: 'สร้างเอกสารจัดซื้อจัดจ้างสำเร็จ' };
-		} catch (err) {
-			console.error('Create document error:', err);
-			return fail(500, { success: false, errors: { plan_id: ['เกิดข้อผิดพลาด'] } });
-		}
-	},
-
-	createDocumentV2: async ({ request, locals }) => {
 		const form = await request.formData();
 		const agency_id = Number(form.get('agency_id'));
 		const plan_id = Number(form.get('plan_id'));
@@ -184,7 +150,7 @@ export const actions: Actions = {
 			return fail(400, { success: false, errors: { doc_type: ['ประเภทเอกสารไม่ถูกต้อง'] } });
 		}
 
-		// type1-3 require procurement_method; type4 and type5 don't
+		// type1/2/3 require procurement_method
 		const needsMethod = ['type1_nParcel', 'type2_iParcelUtil', 'type3_iParcel'].includes(doc_type);
 		if (needsMethod && !procurement_method) {
 			return fail(400, { success: false, errors: { procurement_method: ['กรุณาเลือกวิธีจัดซื้อจัดจ้าง'] } });
@@ -204,7 +170,6 @@ export const actions: Actions = {
 				});
 			}
 
-			// Create the document
 			const { generateSlug } = await import('$lib/server/utils');
 			const [newDoc] = await db
 				.insert(documents)
@@ -227,13 +192,12 @@ export const actions: Actions = {
 				return fail(500, { success: false, errors: { plan_id: ['ไม่สามารถสร้างเอกสารได้'] } });
 			}
 
-			// Create the 5 approval steps
 			const { createApprovalSteps } = await import('$lib/server/approval-flow');
 			await createApprovalSteps(newDoc.id, plan_id, locals.user?.sub, agency_id);
 
-			return { success: true, message: 'สร้างเอกสารจัดซื้อจัดจ้างสำเร็จ — เข้าสู่ขั้นตอนอนุมัติ' };
+			return { success: true, message: 'สร้างเอกสารจัดซื้อจัดจ้างสำเร็จ' };
 		} catch (err) {
-			console.error('Create document v2 error:', err);
+			console.error('Create document error:', err);
 			return fail(500, { success: false, errors: { plan_id: ['เกิดข้อผิดพลาด'] } });
 		}
 	}

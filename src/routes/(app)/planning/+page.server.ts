@@ -227,14 +227,31 @@ export const actions: Actions = {
 		try {
 			const { agency_id, fiscal_year_id, title, parent_id, responsible_unit_id, start_date, end_date, expected_outputs, description, stakeholder_unit_ids, plan_type, is_leaf_node, estimated_amount } = parsed.data;
 
-			// For sub-plans: inherit plan_type and responsible_unit_id from parent
+			// For sub-plans: inherit plan_type, validate responsible_unit is sub-unit of parent's unit
 			let finalPlanType = plan_type;
 			let finalResponsibleUnitId: number | null = responsible_unit_id;
 			if (parent_id) {
 				const [parentPlan] = await db.select().from(plans).where(eq(plans.id, parent_id));
 				if (parentPlan) {
 					finalPlanType = parentPlan.plan_type as 'INCOME' | 'EXPENSE';
-					finalResponsibleUnitId = parentPlan.responsible_unit_id;
+
+					// Validate that chosen unit is a sub-unit of parent plan's responsible unit
+					if (parentPlan.responsible_unit_id && responsible_unit_id) {
+						const [chosenUnit] = await db
+							.select()
+							.from(orgUnits)
+							.where(eq(orgUnits.id, responsible_unit_id));
+						if (!chosenUnit || chosenUnit.parent_id !== parentPlan.responsible_unit_id) {
+							return fail(400, {
+								success: false,
+								errors: {
+									responsible_unit_id: [
+										'หน่วยรับผิดชอบของแผนย่อยต้องเป็นหน่วยย่อยของหน่วยที่รับผิดชอบแผนแม่'
+									]
+								}
+							});
+						}
+					}
 
 					// Validate date range against parent plan
 					if (parentPlan.start_date && parentPlan.end_date) {
@@ -331,8 +348,26 @@ export const actions: Actions = {
 				}
 			}
 
-			const isRootPlan = !oldPlan?.parent_id; // sub-plans inherit responsible_unit from parent
+			const isRootPlan = !oldPlan?.parent_id;
 			const finalEstimatedAmount = is_leaf_node ? (estimated_amount || '0') : '0';
+
+			// For sub-plans: validate that chosen unit is sub-unit of parent's unit
+			let finalResponsibleUnitId: number | null | undefined = undefined;
+			if (isRootPlan) {
+				finalResponsibleUnitId = responsible_unit_id ?? null;
+			} else if (responsible_unit_id && oldPlan?.parent_id) {
+				const [parentPlan] = await db.select().from(plans).where(eq(plans.id, oldPlan.parent_id));
+				if (parentPlan?.responsible_unit_id) {
+					const [chosenUnit] = await db.select().from(orgUnits).where(eq(orgUnits.id, responsible_unit_id));
+					if (!chosenUnit || chosenUnit.parent_id !== parentPlan.responsible_unit_id) {
+						return fail(400, {
+							success: false,
+							errors: { responsible_unit_id: ['หน่วยรับผิดชอบของแผนย่อยต้องเป็นหน่วยย่อยของหน่วยที่รับผิดชอบแผนแม่'] }
+						});
+					}
+					finalResponsibleUnitId = responsible_unit_id;
+				}
+			}
 
 			let parsedExpectedOutputs = null;
 			if (expected_outputs) {
@@ -343,7 +378,7 @@ export const actions: Actions = {
 				.update(plans)
 				.set({
 					title,
-					responsible_unit_id: isRootPlan ? (responsible_unit_id ?? null) : undefined,
+					responsible_unit_id: finalResponsibleUnitId,
 					start_date: start_date ?? null,
 					end_date: end_date ?? null,
 					duration_text: calcDuration(start_date, end_date),

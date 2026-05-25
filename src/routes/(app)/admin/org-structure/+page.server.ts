@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { orgUnits, users, agencies } from '$lib/server/db/schema';
+import { orgUnits, users, agencies, agencySettings } from '$lib/server/db/schema';
 import { eq, and, isNull, ne } from 'drizzle-orm';
 import { createOrgUnitSchema, updateOrgUnitSchema, parseFormData } from '$lib/server/validation/schemas';
 import { getAgencyScope } from '$lib/server/auth/scope';
@@ -43,7 +43,10 @@ export const load: PageServerLoad = async ({ locals, cookies }) => {
 
 	const canManage = locals.user?.is_super_admin || locals.user?.is_director || locals.user?.permissions.can_manage_users || false;
 
-	return { units, agencies: agencyList, users: userList, agencyFilter, canManage };
+	// Load agency settings for unit type mapping
+	const settingsList = await db.select().from(agencySettings);
+
+	return { units, agencies: agencyList, users: userList, agencyFilter, canManage, agencySettings: settingsList };
 };
 
 export const actions: Actions = {
@@ -206,6 +209,46 @@ export const actions: Actions = {
 		} catch (err) {
 			console.error('Import CSV error:', err);
 			return fail(500, { success: false, errors: { csv: ['เกิดข้อผิดพลาดในการนำเข้า'] } });
+		}
+	},
+
+	saveAgencySettings: async ({ request }) => {
+		const form = await request.formData();
+		const agency_id = Number(form.get('agency_id'));
+		const planning_unit_id = form.get('planning_unit_id') ? Number(form.get('planning_unit_id')) : null;
+		const procurement_unit_id = form.get('procurement_unit_id') ? Number(form.get('procurement_unit_id')) : null;
+		const finance_unit_id = form.get('finance_unit_id') ? Number(form.get('finance_unit_id')) : null;
+
+		if (!agency_id || isNaN(agency_id)) {
+			return fail(400, { success: false, errors: { agency_id: ['ต้องระบุหน่วยงาน'] } });
+		}
+
+		try {
+			// Upsert: insert or update on conflict
+			const [existing] = await db
+				.select()
+				.from(agencySettings)
+				.where(eq(agencySettings.agency_id, agency_id))
+				.limit(1);
+
+			if (existing) {
+				await db
+					.update(agencySettings)
+					.set({ planning_unit_id, procurement_unit_id, finance_unit_id })
+					.where(eq(agencySettings.agency_id, agency_id));
+			} else {
+				await db.insert(agencySettings).values({
+					agency_id,
+					planning_unit_id,
+					procurement_unit_id,
+					finance_unit_id
+				});
+			}
+
+			return { success: true, message: 'บันทึกการตั้งค่าสำเร็จ' };
+		} catch (err) {
+			console.error('Save agency settings error:', err);
+			return fail(500, { success: false, errors: { agency_id: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });
 		}
 	},
 

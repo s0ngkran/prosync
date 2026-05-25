@@ -606,7 +606,6 @@
 				<input type="hidden" name="parent_id" value={creatingParentId || ''} />
 				{#if isSubPlan && parentPlan}
 					<input type="hidden" name="plan_type" value={parentPlan.plan_type} />
-					<input type="hidden" name="responsible_unit_id" value={parentPlan.responsible_unit_id || ''} />
 				{/if}
 
 				<div class="mt-5 space-y-4">
@@ -652,12 +651,26 @@
 									{parentPlan?.plan_type === 'INCOME' ? 'รายรับ' : 'รายจ่าย'}
 								</div>
 							</div>
+							{#each [data.orgUnits.filter(u => u.parent_id === parentPlan?.responsible_unit_id)] as subUnits}
 							<div>
-								<p class="text-[0.8125rem] font-medium" style="color: var(--color-slate-700)">หน่วยงาน</p>
-								<div class="mt-1 truncate rounded-lg px-3 py-2 text-sm" style="background: var(--color-slate-100); color: var(--color-slate-500)">
-									{getOrgUnitName(parentPlan?.responsible_unit_id ?? null) || 'ไม่ระบุ'}
+								{@render formField('c-sub-unit', 'หน่วยงานย่อยรับผิดชอบ', true)}
+								<div class="mt-1">
+									{#if subUnits.length > 0}
+										<CustomSelect
+											name="responsible_unit_id"
+											options={subUnits.map((u) => ({ value: String(u.id), label: u.name }))}
+											placeholder="-- เลือกหน่วยย่อย --"
+											required
+											id="c-sub-unit"
+										/>
+									{:else}
+										<div class="rounded-lg px-3 py-2 text-sm" style="background: var(--color-amber-50); color: var(--color-amber-700)">
+											ไม่มีหน่วยย่อยในหน่วย "{getOrgUnitName(parentPlan?.responsible_unit_id ?? null)}" — กรุณาเพิ่มหน่วยย่อยก่อน
+										</div>
+									{/if}
 								</div>
 							</div>
+							{/each}
 						</div>
 					{/if}
 
@@ -815,10 +828,26 @@
 								<p class="text-[0.8125rem] font-medium" style="color: var(--color-slate-700)">ประเภท</p>
 								<div class="mt-1 rounded-lg px-3 py-2 text-sm" style="background: var(--color-slate-100); color: var(--color-slate-500)">{editingPlan.plan_type === 'INCOME' ? 'รายรับ' : 'รายจ่าย'}</div>
 							</div>
+							{#each [data.orgUnits.filter(u => u.parent_id === editParent?.responsible_unit_id)] as editSubUnits}
 							<div>
-								<p class="text-[0.8125rem] font-medium" style="color: var(--color-slate-700)">หน่วยงาน</p>
-								<div class="mt-1 truncate rounded-lg px-3 py-2 text-sm" style="background: var(--color-slate-100); color: var(--color-slate-500)">{getOrgUnitName(editingPlan.responsible_unit_id) || 'ไม่ระบุ'}</div>
+								{@render formField('e-sub-unit', 'หน่วยงานย่อยรับผิดชอบ')}
+								<div class="mt-1">
+									{#if editSubUnits.length > 0}
+										<CustomSelect
+											name="responsible_unit_id"
+											value={editingPlan.responsible_unit_id ? String(editingPlan.responsible_unit_id) : ''}
+											options={editSubUnits.map((u) => ({ value: String(u.id), label: u.name }))}
+											placeholder="-- เลือกหน่วยย่อย --"
+											id="e-sub-unit"
+										/>
+									{:else}
+										<div class="rounded-lg px-3 py-2 text-sm" style="background: var(--color-amber-50); color: var(--color-amber-700)">
+											ไม่มีหน่วยย่อย
+										</div>
+									{/if}
+								</div>
 							</div>
+							{/each}
 						</div>
 					{/if}
 

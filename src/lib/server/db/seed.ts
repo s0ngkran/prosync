@@ -429,146 +429,32 @@ async function seed() {
 	let banks = await db.select().from(schema.bank);
 
 	// ──────────────────────────────────────────
-	// 6. Workflows — 5 วิธีจัดซื้อจัดจ้างส่วนกลาง (ทุกวิธีจบด้วยกระบวนการฎีกาเบิกจ่าย 4 ขั้นตอน)
+	// 6. V2 Flow — ไม่ใช้ workflow steps อีกต่อไป
+	//    วิธีจัดซื้อ 5 แบบกำหนดผ่าน procurement_method ในตาราง documents
+	//    เอกสารที่ต้องจัดทำกำหนดใน BILL_SECTION_LABELS (src/lib/types/procurement.ts)
+	//    ขั้นตอนอนุมัติ 5 ขั้นตอนกำหนดใน approval-flow.ts
 	// ──────────────────────────────────────────
-	// ── Helper: 4 ขั้นตอนฎีกาเบิกจ่าย (ท้ายทุก workflow) ──
-	// ตามคู่มือปฏิบัติงานการตรวจสอบเอกสารหลักฐานการเบิกจ่ายเงิน
-	const dikaSteps = (wfId: number, startSeq: number) => [
-		// 1. วางฎีกาและลงทะเบียนรับ → เจ้าหน้าที่พัสดุ/ผู้จัดทำ
-		{ workflow_id: wfId, step_sequence: startSeq, step_name: 'จัดทำฎีกาเบิกจ่าย (วางฎีกาและลงทะเบียนรับ)', ui_schema: { type: 'document_upload', components: ['send_to_finance_button', 'single_pdf_uploader'], trigger: 'generate_dika', description: 'สร้างฎีกาเบิกจ่ายและอัปโหลดเอกสารประกอบ — ฎีกาจะถูกส่งไปยังแผนกการเงินอัตโนมัติ' }, required_pdfs: ['ฎีกาเบิกจ่าย', 'สมุดทะเบียนเบิกเงิน'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-		// 2. รอการเงินเบิกจ่าย — ขั้นตอนอัตโนมัติ เสร็จเมื่อฎีกาสถานะ PAID
-		{ workflow_id: wfId, step_sequence: startSeq + 1, step_name: 'รอการเงินเบิกจ่าย', ui_schema: { type: 'waiting_for_finance', components: [], description: 'ขั้นตอนนี้จะเสร็จสมบูรณ์อัตโนมัติเมื่อแผนกการเงินดำเนินการจ่ายเงินเรียบร้อยแล้ว (ตรวจสอบ → อนุมัติ → จ่ายเงิน)' }, required_pdfs: null, approver_role: null, is_final_step: true, step_assignees: [{ type: 'system' }] }
-	];
+	// V2 Flow Reference:
+	//   Document Types: type1_nParcel, type2_iParcelUtil, type3_iParcel, type4_iFinance, type5_project
+	//   Procurement Methods: specific_lte100k, specific_gt100k, selection, e_bidding, e_market
+	//   Approval: DIVISION_DRAFT → HEAD_APPROVE → PLANNER_CHECK → PLANNER_DIRECTOR_APPROVE → DIRECTOR_APPROVE
+	//   Execution: Consolidated bill form (1 step) → Finance (dika)
 
 	let workflows = await db.select().from(schema.workflows);
 	if (workflows.length === 0) {
+		// Keep workflow table for reference/legacy compat but no steps needed
 		workflows = await db
 			.insert(schema.workflows)
 			.values([
-				{ name: 'วิธีเฉพาะเจาะจง (ไม่เกิน 100,000 บาท)', total_steps: 12, agency_id: null },
-				{ name: 'วิธีเฉพาะเจาะจง (เกิน 100,000 - 500,000 บาท)', total_steps: 14, agency_id: null },
-				{ name: 'วิธีคัดเลือก', total_steps: 14, agency_id: null },
-				{ name: 'วิธีประกวดราคาอิเล็กทรอนิกส์ (e-bidding)', total_steps: 15, agency_id: null },
-				{ name: 'วิธีตลาดอิเล็กทรอนิกส์ (e-market)', total_steps: 11, agency_id: null }
+				{ name: 'วิธีเฉพาะเจาะจง (ไม่เกิน 100,000 บาท)', total_steps: 1, agency_id: null },
+				{ name: 'วิธีเฉพาะเจาะจง (เกิน 100,000 - 500,000 บาท)', total_steps: 1, agency_id: null },
+				{ name: 'วิธีคัดเลือก', total_steps: 1, agency_id: null },
+				{ name: 'วิธีประกวดราคาอิเล็กทรอนิกส์ (e-bidding)', total_steps: 1, agency_id: null },
+				{ name: 'วิธีตลาดอิเล็กทรอนิกส์ (e-market)', total_steps: 1, agency_id: null }
 			])
 			.returning();
-		console.log('✅ Workflows seeded (5 วิธี)');
-
-		// ────────────────────────────────────────────────────────────
-		// 🟢 1. วิธีเฉพาะเจาะจง (ไม่เกิน 100,000 บาท) — 12 steps
-		//    สั้นที่สุด ไม่มีสัญญา ไม่มีคณะกรรมการ TOR/ราคากลาง
-		// ────────────────────────────────────────────────────────────
-		const wf1 = workflows.find((w) => w.name.includes('ไม่เกิน 100,000'))!;
-		await db.insert(schema.workflowSteps).values([
-			// ── เฟส 1: ตั้งเรื่องและขออนุมัติหลักการ ──
-			{ workflow_id: wf1.id, step_sequence: 1, step_name: 'จัดทำบันทึกขออนุมัติ/ขอซื้อจ้าง (PR)', ui_schema: { type: 'document_upload', components: ['budget_input', 'single_pdf_uploader'], description: 'เจ้าของเรื่องทำบันทึกขออนุมัติพร้อมแนบสเปค/ขอบเขตงาน' }, required_pdfs: ['บันทึกขออนุมัติ'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf1.id, step_sequence: 2, step_name: 'จัดทำรายงานขอซื้อขอจ้าง และตั้งกรรมการตรวจรับ', ui_schema: { type: 'committee', components: [{ type: 'committee_selector', committee_type: 'INSPECTION' }, 'single_pdf_uploader'], description: 'เจ้าหน้าที่พัสดุทำรายงานฯ และเสนอแต่งตั้งกรรมการตรวจรับ' }, required_pdfs: ['รายงานขอซื้อขอจ้าง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf1.id, step_sequence: 3, step_name: 'อนุมัติรายงานขอซื้อขอจ้าง', ui_schema: { type: 'approval', components: ['approval_summary'], description: 'หัวหน้าหน่วยงาน/ผอ. เห็นชอบรายงานขอซื้อขอจ้าง' }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			// ── เฟส 2-3: เชิญชวน อนุมัติ ประกาศผล ──
-			{ workflow_id: wf1.id, step_sequence: 4, step_name: 'เชิญชวนและรับใบเสนอราคา', ui_schema: { type: 'vendor_proposal_with_upload', components: ['vendor_multi_selector', 'vendor_proposal_receiver'], description: 'เจ้าหน้าที่พัสดุเชิญผู้ขายยื่นใบเสนอราคาและเจรจาต่อรอง', write_to_table: 'document_bidders' }, required_pdfs: null, approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf1.id, step_sequence: 5, step_name: 'จัดทำรายงานผลการพิจารณา', ui_schema: { type: 'evaluation_with_scoring', components: ['bidders_scoring_board', 'single_pdf_uploader'], description: 'พิจารณาคะแนนผู้ยื่นซองและเลือกผู้ชนะ', read_from_table: 'document_bidders' }, required_pdfs: ['รายงานผลการพิจารณา'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf1.id, step_sequence: 6, step_name: 'อนุมัติสั่งซื้อ/สั่งจ้าง (อนุมัติผู้ชนะ)', ui_schema: { type: 'approval', components: ['approval_summary'], description: 'หัวหน้าหน่วยงาน/ผอ. อนุมัติเห็นชอบผลการคัดเลือก' }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			{ workflow_id: wf1.id, step_sequence: 7, step_name: 'ประกาศผู้ชนะการเสนอราคา', ui_schema: { type: 'document_upload', components: ['single_pdf_uploader'], description: 'เจ้าหน้าที่พัสดุประกาศผู้ชนะผ่านระบบและปิดประกาศ' }, required_pdfs: ['ประกาศผู้ชนะ'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 4: สั่งซื้อและตรวจรับ ──
-			{ workflow_id: wf1.id, step_sequence: 8, step_name: 'ออกใบสั่งซื้อ/ใบสั่งจ้าง (PO)', ui_schema: { type: 'document_upload', components: ['contract_details_form', 'single_pdf_uploader'], description: 'เจ้าหน้าที่พัสดุแจ้งผู้ขายให้ลงนามในใบสั่งซื้อ/สั่งจ้าง' }, required_pdfs: ['ใบสั่งซื้อ/ใบสั่งจ้าง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf1.id, step_sequence: 9, step_name: 'ตรวจรับพัสดุ', ui_schema: { type: 'document_upload', components: ['inspection_form', 'fine_calculator', 'multi_pdf_uploader'], description: 'กรรมการตรวจรับตรวจรับงานและทำรายงานผลการตรวจรับ' }, required_pdfs: ['ใบตรวจรับ', 'ใบแจ้งหนี้'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'committee', value: 'INSPECTION' }] },
-			// ── เฟส 5: ฎีกาเบิกจ่าย (2 ขั้นตอน) ──
-			...dikaSteps(wf1.id, 10)
-		]);
-
-		// ────────────────────────────────────────────────────────────
-		// 🟡 2. วิธีเฉพาะเจาะจง (เกิน 100,000 - 500,000 บาท) — 14 steps
-		//    เพิ่มราคากลาง TOR และการทำสัญญา
-		// ────────────────────────────────────────────────────────────
-		const wf2 = workflows.find((w) => w.name.includes('เกิน 100,000') && !w.name.includes('ไม่เกิน'))!;
-		await db.insert(schema.workflowSteps).values([
-			// ── เฟส 1: เตรียมการและอนุมัติหลักการ ──
-			{ workflow_id: wf2.id, step_sequence: 1, step_name: 'จัดทำแผนจัดซื้อจัดจ้าง', ui_schema: { type: 'document_upload', components: ['budget_input', 'single_pdf_uploader'], description: 'เจ้าหน้าที่พัสดุทำแผนและประกาศลงระบบ e-GP' }, required_pdfs: ['แผนจัดซื้อจัดจ้าง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf2.id, step_sequence: 2, step_name: 'จัดทำบันทึกขออนุมัติ และตั้งคณะกรรมการ TOR/ราคากลาง', ui_schema: { type: 'committee', components: [{ type: 'committee_selector', committee_type: 'TOR' }, { type: 'committee_selector', committee_type: 'MEDIAN_PRICE' }, 'single_pdf_uploader'], description: 'เจ้าของเรื่องและเจ้าหน้าที่พัสดุขออนุมัติและตั้งกรรมการ' }, required_pdfs: ['บันทึกขออนุมัติ'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf2.id, step_sequence: 3, step_name: 'ขออนุมัติ TOR และราคากลาง', ui_schema: { type: 'approval', components: ['approval_summary'], description: 'คณะกรรมการสรุปสเปคและราคากลางเสนออนุมัติ' }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			{ workflow_id: wf2.id, step_sequence: 4, step_name: 'จัดทำรายงานขอซื้อขอจ้าง และตั้งกรรมการตรวจรับ', ui_schema: { type: 'committee', components: [{ type: 'committee_selector', committee_type: 'INSPECTION' }, 'single_pdf_uploader'], description: 'เจ้าหน้าที่พัสดุทำรายงานฯ ในระบบ e-GP' }, required_pdfs: ['รายงานขอซื้อขอจ้าง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 2-3: เชิญชวน พิจารณา ประกาศผล ──
-			{ workflow_id: wf2.id, step_sequence: 5, step_name: 'เชิญชวนและรับใบเสนอราคา', ui_schema: { type: 'vendor_proposal_with_upload', components: ['vendor_multi_selector', 'vendor_proposal_receiver'], description: 'เชิญผู้ขายยื่นข้อเสนอและเจรจาตกลงราคา', write_to_table: 'document_bidders' }, required_pdfs: null, approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf2.id, step_sequence: 6, step_name: 'จัดทำรายงานผลการพิจารณา', ui_schema: { type: 'evaluation_with_scoring', components: ['bidders_scoring_board', 'single_pdf_uploader'], description: 'สรุปผลเสนอให้เห็นชอบ', read_from_table: 'document_bidders' }, required_pdfs: ['รายงานผลการพิจารณา'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf2.id, step_sequence: 7, step_name: 'อนุมัติสั่งซื้อ/สั่งจ้าง (อนุมัติผู้ชนะ)', ui_schema: { type: 'approval', components: ['approval_summary'] }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			{ workflow_id: wf2.id, step_sequence: 8, step_name: 'ประกาศผู้ชนะการเสนอราคา', ui_schema: { type: 'document_upload', components: ['single_pdf_uploader'] }, required_pdfs: ['ประกาศผู้ชนะ'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 4: ทำสัญญาและตรวจรับ ──
-			{ workflow_id: wf2.id, step_sequence: 9, step_name: 'จัดทำและลงนามสัญญา', ui_schema: { type: 'document_upload', components: ['contract_details_form', 'multi_pdf_uploader'], description: 'ร่างสัญญา นำหลักประกันมาวาง และลงนาม' }, required_pdfs: ['สัญญา', 'หลักประกันสัญญา'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf2.id, step_sequence: 10, step_name: 'ตรวจรับพัสดุ', ui_schema: { type: 'document_upload', components: ['inspection_form', 'fine_calculator', 'multi_pdf_uploader'] }, required_pdfs: ['ใบตรวจรับ', 'ใบแจ้งหนี้'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'committee', value: 'INSPECTION' }] },
-			// ── เฟส 5: ฎีกาเบิกจ่าย (4 ขั้นตอน) ──
-			...dikaSteps(wf2.id, 11)
-		]);
-
-		// ────────────────────────────────────────────────────────────
-		// 🟠 3. วิธีคัดเลือก — 14 steps
-		//    งานซับซ้อน เชิญผู้ขาย ≥ 3 ราย มีคณะกรรมการซื้อหรือจ้าง
-		// ────────────────────────────────────────────────────────────
-		const wf3 = workflows.find((w) => w.name === 'วิธีคัดเลือก')!;
-		await db.insert(schema.workflowSteps).values([
-			// ── เฟส 1: เตรียมการและอนุมัติหลักการ ──
-			{ workflow_id: wf3.id, step_sequence: 1, step_name: 'จัดทำแผนจัดซื้อจัดจ้าง', ui_schema: { type: 'document_upload', components: ['budget_input', 'single_pdf_uploader'], description: 'บันทึกแผนใน e-GP และอนุมัติ' }, required_pdfs: ['แผนจัดซื้อจัดจ้าง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf3.id, step_sequence: 2, step_name: 'จัดทำร่าง TOR และราคากลาง', ui_schema: { type: 'committee', components: [{ type: 'committee_selector', committee_type: 'TOR' }, { type: 'committee_selector', committee_type: 'MEDIAN_PRICE' }, 'single_pdf_uploader'], description: 'กำหนดสเปค สืบราคากลาง เสนอหัวหน้าหน่วยงานอนุมัติ' }, required_pdfs: ['TOR', 'ราคากลาง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf3.id, step_sequence: 3, step_name: 'จัดทำรายงานขอซื้อขอจ้าง และตั้งคณะกรรมการ', ui_schema: { type: 'committee', components: [{ type: 'committee_selector', committee_type: 'PROCUREMENT' }, { type: 'committee_selector', committee_type: 'INSPECTION' }, 'single_pdf_uploader'], description: 'สร้างเอกสารลงระบบ e-GP เสนอหัวหน้าหน่วยงานอนุมัติ' }, required_pdfs: ['รายงานขอซื้อขอจ้าง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 2: เชิญชวนและรับข้อเสนอ ──
-			{ workflow_id: wf3.id, step_sequence: 4, step_name: 'จัดทำหนังสือเชิญชวน (ไม่น้อยกว่า 3 ราย)', ui_schema: { type: 'vendor_scoring_with_upload', components: ['vendor_multi_selector'], min_vendors: 3, description: 'คณะกรรมการซื้อ/จ้างส่งจดหมายเชิญผู้ประกอบการที่มีคุณสมบัติตรงตามกำหนด' }, required_pdfs: null, approver_role: null, is_final_step: false, step_assignees: [{ type: 'committee', value: 'PROCUREMENT' }] },
-			{ workflow_id: wf3.id, step_sequence: 5, step_name: 'รับซองข้อเสนอ', ui_schema: { type: 'vendor_proposal_with_upload', components: ['vendor_proposal_receiver', 'vendor_per_item_pdf_uploader'], write_to_table: 'document_bidders', description: 'รับซอง ลงเวลา ออกใบรับ' }, required_pdfs: null, approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 3: พิจารณาผลและอนุมัติ ──
-			{ workflow_id: wf3.id, step_sequence: 6, step_name: 'เปิดซองและพิจารณาผล', ui_schema: { type: 'evaluation_with_scoring', components: ['bidders_scoring_board', 'single_pdf_uploader'], read_from_table: 'document_bidders', description: 'ตรวจสอบผลประโยชน์ร่วมกัน คัดเลือกผู้เสนอราคาต่ำสุด/คะแนนสูงสุด' }, required_pdfs: ['รายงานผลการพิจารณา'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'committee', value: 'PROCUREMENT' }] },
-			{ workflow_id: wf3.id, step_sequence: 7, step_name: 'รายงานผลและอนุมัติผู้ชนะ', ui_schema: { type: 'approval', components: ['approval_summary'], description: 'เสนอผลการคัดเลือกให้ ผอ. อนุมัติสั่งซื้อสั่งจ้าง' }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			{ workflow_id: wf3.id, step_sequence: 8, step_name: 'ประกาศผู้ชนะการเสนอราคา', ui_schema: { type: 'document_upload', components: ['single_pdf_uploader'], description: 'ประกาศผลใน e-GP และแจ้งผู้ยื่นราคาทุกราย' }, required_pdfs: ['ประกาศผู้ชนะ'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 4: ทำสัญญาและตรวจรับ ──
-			{ workflow_id: wf3.id, step_sequence: 9, step_name: 'ลงนามในสัญญา', ui_schema: { type: 'document_upload', components: ['contract_details_form', 'multi_pdf_uploader'], description: 'เชิญผู้ชนะมาทำสัญญา ตรวจสอบหลักประกัน และลงนาม' }, required_pdfs: ['สัญญา', 'หลักประกันสัญญา'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf3.id, step_sequence: 10, step_name: 'ตรวจรับพัสดุ', ui_schema: { type: 'document_upload', components: ['inspection_form', 'fine_calculator', 'multi_pdf_uploader'], description: 'กรรมการตรวจรับงาน ทำรายงานผล' }, required_pdfs: ['ใบตรวจรับ', 'ใบแจ้งหนี้'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'committee', value: 'INSPECTION' }] },
-			// ── เฟส 5: ฎีกาเบิกจ่าย (4 ขั้นตอน) ──
-			...dikaSteps(wf3.id, 11)
-		]);
-
-		// ────────────────────────────────────────────────────────────
-		// 🔵 4. วิธี e-Bidding (เกิน 500,000 บาท) — 15 steps
-		//    ประมูลอิเล็กทรอนิกส์เต็มรูปแบบ มีวิจารณ์ TOR + อุทธรณ์
-		// ────────────────────────────────────────────────────────────
-		const wf4 = workflows.find((w) => w.name.includes('e-bidding'))!;
-		await db.insert(schema.workflowSteps).values([
-			// ── เฟส 1: เตรียมการและร่างประกาศ ──
-			{ workflow_id: wf4.id, step_sequence: 1, step_name: 'จัดทำแผนจัดซื้อจัดจ้าง', ui_schema: { type: 'document_upload', components: ['budget_input', 'single_pdf_uploader'], description: 'ประกาศแผนลงระบบ e-GP' }, required_pdfs: ['แผนจัดซื้อจัดจ้าง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf4.id, step_sequence: 2, step_name: 'อนุมัติหลักการ และร่าง TOR/ราคากลาง', ui_schema: { type: 'committee', components: [{ type: 'committee_selector', committee_type: 'TOR' }, { type: 'committee_selector', committee_type: 'MEDIAN_PRICE' }, 'single_pdf_uploader'], description: 'ทำบันทึกขอจ้าง ประชุมทำสเปคและราคากลาง' }, required_pdfs: ['TOR', 'ราคากลาง'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf4.id, step_sequence: 3, step_name: 'ทำรายงานขอซื้อขอจ้าง และร่างประกาศ e-Bidding', ui_schema: { type: 'committee', components: [{ type: 'committee_selector', committee_type: 'PROCUREMENT' }, { type: 'committee_selector', committee_type: 'INSPECTION' }, 'single_pdf_uploader'], description: 'สร้างร่างประกาศในระบบ e-GP' }, required_pdfs: ['ร่างประกาศ e-Bidding'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf4.id, step_sequence: 4, step_name: 'รับฟังคำวิจารณ์ร่างประกาศ (3-5 วันทำการ)', ui_schema: { type: 'document_upload', components: ['single_pdf_uploader'], description: 'รับฟังความเห็น หากมีการแก้ไขต้องปรับปรุงใหม่' }, required_pdfs: ['สรุปผลการรับฟังวิจารณ์'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 2: ประกาศเชิญชวนและเสนอราคา ──
-			{ workflow_id: wf4.id, step_sequence: 5, step_name: 'อนุมัติประกาศและขายซอง', ui_schema: { type: 'approval', components: ['approval_summary'], description: 'ผอ. อนุมัติ พัสดุนำประกาศขึ้นระบบ e-GP (5-20 วันทำการ)' }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			{ workflow_id: wf4.id, step_sequence: 6, step_name: 'ผู้ประกอบการเสนอราคา (e-Bidding)', ui_schema: { type: 'vendor_proposal_with_upload', components: ['vendor_proposal_receiver', 'vendor_per_item_pdf_uploader'], write_to_table: 'document_bidders', description: 'เสนอราคาผ่านระบบ e-GP (เสนอได้เพียงครั้งเดียว)' }, required_pdfs: null, approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 3: พิจารณาผล อนุมัติ อุทธรณ์ ──
-			{ workflow_id: wf4.id, step_sequence: 7, step_name: 'พิจารณาผลการประกวดราคา', ui_schema: { type: 'evaluation_with_scoring', components: ['bidders_scoring_board', 'single_pdf_uploader'], read_from_table: 'document_bidders', description: 'พัสดุพิมพ์เอกสารจากระบบให้คณะกรรมการตรวจคุณสมบัติและราคา' }, required_pdfs: ['รายงานผลการพิจารณา'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'committee', value: 'PROCUREMENT' }] },
-			{ workflow_id: wf4.id, step_sequence: 8, step_name: 'อนุมัติผลและประกาศผู้ชนะ', ui_schema: { type: 'approval', components: ['approval_summary'], description: 'ผอ. อนุมัติผล พัสดุประกาศผู้ชนะใน e-GP' }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			{ workflow_id: wf4.id, step_sequence: 9, step_name: 'ระยะเวลาอุทธรณ์ (7 วันทำการ)', ui_schema: { type: 'document_upload', components: ['single_pdf_uploader'], description: 'ผู้เสนอราคาที่แพ้มีสิทธิยื่นอุทธรณ์ภายใน 7 วันทำการ — ห้ามทำสัญญาจนกว่าพ้นกำหนด' }, required_pdfs: ['บันทึกผลอุทธรณ์ (ถ้ามี)'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 4: ทำสัญญาและตรวจรับ ──
-			{ workflow_id: wf4.id, step_sequence: 10, step_name: 'จัดทำและลงนามสัญญา', ui_schema: { type: 'document_upload', components: ['contract_details_form', 'multi_pdf_uploader'], description: 'ตรวจสอบหลักประกันสัญญา และเซ็นสัญญาผ่าน e-GP' }, required_pdfs: ['สัญญา', 'หลักประกันสัญญา'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf4.id, step_sequence: 11, step_name: 'ตรวจรับพัสดุ', ui_schema: { type: 'document_upload', components: ['inspection_form', 'fine_calculator', 'multi_pdf_uploader'] }, required_pdfs: ['ใบตรวจรับ', 'ใบแจ้งหนี้'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'committee', value: 'INSPECTION' }] },
-			// ── เฟส 5: ฎีกาเบิกจ่าย (4 ขั้นตอน) ──
-			...dikaSteps(wf4.id, 12)
-		]);
-
-		// ────────────────────────────────────────────────────────────
-		// 🟣 5. วิธี e-Market (เกิน 500,000 บาท, มีใน e-Catalog) — 11 steps
-		//    ซื้อของมาตรฐาน ระบบกรมบัญชีกลางดึงผู้ค้าให้
-		// ────────────────────────────────────────────────────────────
-		const wf5 = workflows.find((w) => w.name.includes('e-market'))!;
-		await db.insert(schema.workflowSteps).values([
-			// ── เฟส 1: เตรียมการ ──
-			{ workflow_id: wf5.id, step_sequence: 1, step_name: 'จัดทำแผน และร่าง TOR/ราคากลาง', ui_schema: { type: 'committee', components: ['budget_input', { type: 'committee_selector', committee_type: 'MEDIAN_PRICE' }, 'single_pdf_uploader'], description: 'อนุมัติแผนและกำหนดสเปค (ต้องตรงกับใน e-Catalog)' }, required_pdfs: ['แผนจัดซื้อจัดจ้าง', 'TOR'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf5.id, step_sequence: 2, step_name: 'ทำรายงานขอซื้อขอจ้าง และอนุมัติร่างประกาศ e-Market', ui_schema: { type: 'approval', components: ['approval_summary'], description: 'เสนอ ผอ. เห็นชอบร่างประกาศ' }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			// ── เฟส 2: เชิญชวนและเสนอราคา ──
-			{ workflow_id: wf5.id, step_sequence: 3, step_name: 'เผยแพร่ประกาศ e-Market', ui_schema: { type: 'document_upload', components: ['single_pdf_uploader'], description: 'นำประกาศขึ้น e-GP ระบบส่วนกลางจะส่งแจ้งเตือนไปยังผู้ค้า' }, required_pdfs: ['ประกาศ e-Market'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf5.id, step_sequence: 4, step_name: 'ผู้ประกอบการเสนอราคา', ui_schema: { type: 'vendor_proposal_with_upload', components: ['vendor_proposal_receiver'], write_to_table: 'document_bidders', description: '≤5 ล้าน: เสนอได้ครั้งเดียว, >5 ล้าน: ประมูลอิเล็กทรอนิกส์ 30 นาที' }, required_pdfs: null, approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 3: พิจารณาผล อุทธรณ์ สัญญา ──
-			{ workflow_id: wf5.id, step_sequence: 5, step_name: 'พิจารณาผลและอนุมัติผู้ชนะ', ui_schema: { type: 'evaluation_with_scoring', components: ['bidders_scoring_board', 'approval_summary'], read_from_table: 'document_bidders', description: 'ประมวลผลจากราคาต่ำสุด เสนอ ผอ. อนุมัติ' }, required_pdfs: null, approver_role: 'DIRECTOR', is_final_step: false, step_assignees: [{ type: 'role', value: 'DIRECTOR' }] },
-			{ workflow_id: wf5.id, step_sequence: 6, step_name: 'ประกาศผลและรออุทธรณ์ (7 วัน)', ui_schema: { type: 'document_upload', components: ['single_pdf_uploader'], description: 'ประกาศผู้ชนะและเปิดระยะอุทธรณ์ 7 วันทำการ' }, required_pdfs: ['ประกาศผู้ชนะ'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			{ workflow_id: wf5.id, step_sequence: 7, step_name: 'ทำสัญญาและตรวจรับพัสดุ', ui_schema: { type: 'document_upload', components: ['contract_details_form', 'inspection_form', 'fine_calculator', 'multi_pdf_uploader'], description: 'ทำสัญญา ตรวจรับงาน ทำรายงานผล' }, required_pdfs: ['สัญญา', 'ใบตรวจรับ', 'ใบแจ้งหนี้'], approver_role: null, is_final_step: false, step_assignees: [{ type: 'creator' }] },
-			// ── เฟส 4: ฎีกาเบิกจ่าย (4 ขั้นตอน) ──
-			...dikaSteps(wf5.id, 8)
-		]);
-
-		console.log('✅ Workflow steps seeded (5 วิธี: 12+14+14+15+11 = 66 steps)');
+		console.log('✅ Workflows seeded (5 วิธี — V2: consolidated bill form)');
+		// V2: ไม่ seed workflow steps — ทุกอย่างใช้ consolidated bill form (1 ขั้นตอน)
 	} else {
 		console.log('ℹ️  Workflows already exist');
 	}
@@ -1076,188 +962,50 @@ async function seed() {
 
 		const leafPlans = await db.select().from(schema.plans).where(eq(schema.plans.is_leaf_node, true));
 
-		// Helper: create document at specific step with assignments
-		const createDocAt = async (wfId: number, planId: number, stepIdx: number, creatorId: number, assigneeId: number, assignType: string, title: string) => {
-			const steps = await db.select().from(schema.workflowSteps)
-				.where(eq(schema.workflowSteps.workflow_id, wfId))
-				.orderBy(schema.workflowSteps.step_sequence);
-			const step = steps[stepIdx];
-			if (!step) return null;
-
-			const payload: Record<string, unknown> = { title };
-			for (let i = 0; i < stepIdx; i++) {
-				const k = `step_${steps[i].step_sequence}_${steps[i].step_name.replace(/\s+/g, '_').substring(0, 30)}`;
-				const uiType = (steps[i].ui_schema as any)?.type || 'unknown';
-				const baseDate = new Date();
-				baseDate.setDate(baseDate.getDate() - (stepIdx - i));
-				const stepPayload: Record<string, unknown> = {
-					completed_at: baseDate.toISOString(),
-					completed_by: creatorId,
-					completed_by_name: title.includes('CT Scan') ? 'นพ.สมชาย สุขใจ' : 'นพ.สมชาย สุขใจ'
-				};
-				if (uiType === 'approval') {
-					stepPayload._meta = 'ผู้มีอำนาจกดอนุมัติแล้ว ข้อมูลถูกบันทึกลงตาราง approvals';
-					stepPayload.approver = {
-						name: 'นพ.สมชาย สุขใจ',
-						user_id: creatorId,
-						position: 'ผู้อำนวยการโรงพยาบาล',
-						approved_at: baseDate.toISOString()
-					};
-					stepPayload.comment = null;
-				} else if (uiType === 'committee') {
-					const types = ((steps[i].ui_schema as any)?.components || []).filter((c: any) => c?.committee_type).map((c: any) => c.committee_type);
-					stepPayload._meta = `บันทึกกรรมการประเภท ${types.join(' และ ') || 'INSPECTION'} ลงตาราง document_committees แล้ว`;
-				} else if (uiType === 'document_upload') {
-					stepPayload._meta = 'อัปโหลดเอกสารสำเร็จ';
-				} else if (uiType === 'vendor_proposal_with_upload') {
-					stepPayload._meta = 'เอกสารใบเสนอราคาจาก Vendor ถูกบันทึกลงตาราง document_bidders แล้ว';
-				} else if (uiType === 'evaluation_with_scoring') {
-					stepPayload._meta = 'คะแนนของผู้ยื่นซองแต่ละรายและสถานะผู้ชนะ ถูกอัปเดตลงในตาราง document_bidders แล้ว';
-				}
-				payload[k] = stepPayload;
-			}
-
+		// V2: สร้างเอกสารตัวอย่างแบบใหม่ (ใช้ approval-flow + payment-rounds)
+		const createV2Doc = async (planId, docType, procMethod, creatorId, title, phase = 'APPROVAL') => {
+			const { randomUUID } = await import('crypto');
 			const [doc] = await db.insert(schema.documents).values({
-				agency_id: hospital.id, workflow_id: wfId, plan_id: planId,
-				current_step_id: step.id, payload: JSON.stringify(payload),
-				status: 'IN_PROGRESS', updated_by: creatorId
+				slug: randomUUID(), agency_id: hospital.id, plan_id: planId, workflow_id: null,
+				payload: { title }, status: phase === 'EXECUTION' ? 'APPROVED_PROCUREMENT' : 'IN_PROGRESS',
+				updated_by: creatorId, doc_type: docType, procurement_method: procMethod, phase
 			}).returning();
-
-			await db.insert(schema.documentStepAssignments).values({
-				document_id: doc.id, step_id: step.id, user_id: assigneeId,
-				assignment_type: assignType, is_completed: false
-			});
-
-			await db.insert(schema.notifications).values({
-				user_id: assigneeId, document_id: doc.id, step_id: step.id,
-				title: `งานใหม่: ${step.step_name}`,
-				message: `เอกสาร #${doc.id} "${title}" รอดำเนินการ`,
-				action_url: `/procurement/${doc.id}`,
-				notification_type: assignType === 'APPROVER' ? 'APPROVAL_REQUIRED' : 'UPLOAD_REQUIRED',
-				is_read: false
-			});
-
-			// For documents past the vendor evaluation steps, seed bidders with a winner
-			const hasDikaStep = steps.some((s) => (s.ui_schema as any)?.components?.includes('send_to_finance_button'));
-			const dikaStepIdx = steps.findIndex((s) => (s.ui_schema as any)?.components?.includes('send_to_finance_button'));
-			if (hasDikaStep && stepIdx >= dikaStepIdx - 2 && vendors.length >= 3) {
-				const bidderVendors = vendors.slice(0, 3);
-				await db.insert(schema.documentBidders).values(
-					bidderVendors.map((v, i) => ({
-						document_id: doc.id,
-						vendor_id: v.id,
-						proposed_price: randomAmount(10000, 300000),
-						is_winner: i === 0,
-						score: i === 0 ? '95.00' : randomAmount(60, 90),
-						submitted_at: new Date()
-					}))
-				);
+			if (!doc) return null;
+			const stepDefs = [
+				{ seq: 1, code: 'DIVISION_DRAFT', name: 'แผนกรับผิดชอบ — ร่าง' },
+				{ seq: 2, code: 'HEAD_APPROVE', name: 'หัวหน้าแผนก — อนุมัติ' },
+				{ seq: 3, code: 'PLANNER_CHECK', name: 'แผนกแผนงาน — ตรวจสอบ' },
+				{ seq: 4, code: 'PLANNER_DIRECTOR_APPROVE', name: 'หัวหน้าแผนงาน — เสนอ ผอ.' },
+				{ seq: 5, code: 'DIRECTOR_APPROVE', name: 'ผู้อำนวยการ — อนุมัติ' }
+			];
+			const isApproved = phase === 'EXECUTION' || phase === 'COMPLETED';
+			for (const sd of stepDefs) {
+				await db.insert(schema.documentApprovalSteps).values({
+					document_id: doc.id, step_sequence: sd.seq, step_code: sd.code, step_name: sd.name,
+					assigned_user_id: creatorId, status: isApproved ? 'APPROVED' : (sd.seq === 1 ? 'IN_PROGRESS' : 'PENDING'),
+					completed_at: isApproved ? new Date() : null
+				});
 			}
-
+			if (phase === 'EXECUTION' && ['type1_nParcel', 'type2_iParcelUtil', 'type3_iParcel'].includes(docType)) {
+				await db.insert(schema.paymentRounds).values({
+					document_id: doc.id, round_number: 1, status: 'BILL_PENDING', current_actor_role: 'PROCUREMENT'
+				});
+			}
 			return doc;
 		};
 
-		// Helper: create completed/rejected/cancelled documents
-		const createDocWithStatus = async (wfId: number, planId: number, creatorId: number, status: string, title: string) => {
-			const steps = await db.select().from(schema.workflowSteps)
-				.where(eq(schema.workflowSteps.workflow_id, wfId))
-				.orderBy(schema.workflowSteps.step_sequence);
-			const lastStep = steps[steps.length - 1];
-			const payload: Record<string, unknown> = { title };
-			steps.forEach((s, idx) => {
-				const k = `step_${s.step_sequence}_${s.step_name.replace(/\s+/g, '_').substring(0, 30)}`;
-				const baseDate = new Date();
-				baseDate.setDate(baseDate.getDate() - (steps.length - idx));
-				const uiType = (s.ui_schema as any)?.type || 'unknown';
-				const stepPayload: Record<string, unknown> = {
-					completed_at: baseDate.toISOString(),
-					completed_by: creatorId,
-					completed_by_name: 'นพ.สมชาย สุขใจ'
-				};
-				if (uiType === 'approval') {
-					stepPayload._meta = 'ผู้มีอำนาจกดอนุมัติแล้ว ข้อมูลถูกบันทึกลงตาราง approvals';
-					stepPayload.approver = {
-						name: 'นพ.สมชาย สุขใจ',
-						user_id: creatorId,
-						position: 'ผู้อำนวยการโรงพยาบาล',
-						approved_at: baseDate.toISOString()
-					};
-					stepPayload.comment = null;
-				} else if (uiType === 'document_upload') {
-					stepPayload._meta = 'อัปโหลดเอกสารสำเร็จ';
-				}
-				payload[k] = stepPayload;
-			});
-			const [doc] = await db.insert(schema.documents).values({
-				agency_id: hospital.id, workflow_id: wfId, plan_id: planId,
-				current_step_id: status === 'APPROVED_PROCUREMENT' ? lastStep?.id : steps[0]?.id,
-				payload: JSON.stringify(payload), status, updated_by: creatorId
-			}).returning();
-
-			// Seed bidders with a winner for completed/approved documents
-			if (status === 'APPROVED_PROCUREMENT' && vendors.length >= 3) {
-				const bidderVendors = vendors.slice(0, 3);
-				await db.insert(schema.documentBidders).values(
-					bidderVendors.map((v, i) => ({
-						document_id: doc.id,
-						vendor_id: v.id,
-						proposed_price: randomAmount(10000, 300000),
-						is_winner: i === 0,
-						score: i === 0 ? '95.00' : randomAmount(60, 90),
-						submitted_at: new Date()
-					}))
-				);
-			}
-		};
-
-		if (workflows.length > 0 && leafPlans.length >= 10 && proc1U && procHeadU && directorU && finHeadU && fin1U) {
-			const wf1 = workflows.find((w) => w.name.includes('ไม่เกิน 100,000'))!;
-			const wf2 = workflows.find((w) => w.name.includes('เกิน 100,000') && !w.name.includes('ไม่เกิน'))!;
-			const wf3 = workflows.find((w) => w.name === 'วิธีคัดเลือก')!;
-			const wf4 = workflows.find((w) => w.name.includes('e-bidding'))!;
-			const wf5 = workflows.find((w) => w.name.includes('e-market'))!;
-
-			// ── วิธี 1 (≤100K): เอกสารที่ step ต่างๆ ──
-			await createDocAt(wf1.id, leafPlans[0].id, 0, proc1U.id, proc1U.id, 'UPLOADER', 'จัดซื้อวัสดุสำนักงาน');
-			await createDocAt(wf1.id, leafPlans[1].id, 2, proc1U.id, directorU.id, 'APPROVER', 'จัดซื้อหมึกพิมพ์');
-			await createDocAt(wf1.id, leafPlans[2].id, 4, proc1U.id, proc1U.id, 'UPLOADER', 'จ้างซ่อมเครื่องปรับอากาศ (พิจารณาคะแนน)');
-			await createDocAt(wf1.id, leafPlans[3].id, 5, proc1U.id, directorU.id, 'APPROVER', 'จัดซื้ออุปกรณ์ทำความสะอาด (รออนุมัติ)');
-			await createDocAt(wf1.id, leafPlans[4].id, 8, proc1U.id, proc1U.id, 'COMMITTEE_MEMBER', 'จัดซื้อน้ำยาฆ่าเชื้อ (ตรวจรับพัสดุ)');
-			// ฎีกา step 10 (วางฎีกา) — เจ้าหน้าที่พัสดุ
-			await createDocAt(wf1.id, leafPlans[5].id, 9, proc1U.id, proc1U.id, 'UPLOADER', 'จัดซื้อถุงมือยาง (วางฎีกา)');
-			// ฎีกา step 11 (รอการเงิน) — ระบบอัตโนมัติ
-			await createDocAt(wf1.id, leafPlans[6].id, 10, proc1U.id, proc1U.id, 'UPLOADER', 'จัดซื้อกระดาษ A4 (รอการเงินเบิกจ่าย)');
-			// เอกสาร wf1 เพิ่มเติม
-			await createDocAt(wf1.id, leafPlans[7].id, 7, proc1U.id, proc1U.id, 'UPLOADER', 'จ้างทำป้ายไวนิล (ออก PO)');
-
-			// ── วิธี 2 (100K-500K): ──
-			await createDocAt(wf2.id, leafPlans[8].id, 0, proc1U.id, proc1U.id, 'UPLOADER', 'จัดซื้อเครื่องพิมพ์ Laser');
-			await createDocAt(wf2.id, leafPlans[9].id, 2, proc1U.id, directorU.id, 'APPROVER', 'จัดซื้อเครื่องคอมพิวเตอร์ 10 เครื่อง');
-			if (leafPlans[10]) await createDocAt(wf2.id, leafPlans[10].id, 6, proc1U.id, directorU.id, 'APPROVER', 'จัดซื้อครุภัณฑ์สำนักงาน (รออนุมัติผู้ชนะ)');
-			// ฎีกา sub-steps (now step 11 = วางฎีกา, step 12 = รอการเงิน)
-			if (leafPlans[11]) await createDocAt(wf2.id, leafPlans[11].id, 10, proc1U.id, proc1U.id, 'UPLOADER', 'จัดซื้อโต๊ะทำงาน 20 ตัว (วางฎีกา)');
-			if (leafPlans[12]) await createDocAt(wf2.id, leafPlans[12].id, 11, proc1U.id, proc1U.id, 'UPLOADER', 'จ้างปรับปรุงห้องประชุม (รอการเงินเบิกจ่าย)');
-
-			// ── วิธี 3 (คัดเลือก): ──
-			if (leafPlans[13]) await createDocAt(wf3.id, leafPlans[13].id, 0, proc1U.id, proc1U.id, 'UPLOADER', 'จัดซื้อเครื่องมือแพทย์เฉพาะทาง');
-			if (leafPlans[14]) await createDocAt(wf3.id, leafPlans[14].id, 6, proc1U.id, directorU.id, 'APPROVER', 'จัดซื้อครุภัณฑ์ห้องผ่าตัด (รออนุมัติผู้ชนะ)');
-
-			// ── วิธี 4 (e-Bidding): ──
-			if (leafPlans[15]) await createDocAt(wf4.id, leafPlans[15].id, 0, proc2U?.id || proc1U.id, proc2U?.id || proc1U.id, 'UPLOADER', 'จัดซื้อเครื่อง CT Scan');
-			if (leafPlans[16]) await createDocAt(wf4.id, leafPlans[16].id, 4, proc1U.id, directorU.id, 'APPROVER', 'จัดซื้อรถพยาบาล (รออนุมัติประกาศ)');
-
-			// ── วิธี 5 (e-Market): ──
-			if (leafPlans[17]) await createDocAt(wf5.id, leafPlans[17].id, 1, proc1U.id, directorU.id, 'APPROVER', 'จัดซื้อยาจากบัญชียาหลัก (รออนุมัติ)');
-
-			// ── เอกสารที่จบแล้ว / ยกเลิก / ปฏิเสธ ──
-			if (leafPlans[18]) await createDocWithStatus(wf1.id, leafPlans[18].id, proc1U.id, 'APPROVED_PROCUREMENT', 'จัดซื้อกล่องเก็บเอกสาร (เสร็จสมบูรณ์)');
-			if (leafPlans[19]) await createDocWithStatus(wf1.id, leafPlans[19].id, proc1U.id, 'APPROVED_PROCUREMENT', 'จ้างทำความสะอาด (เสร็จสมบูรณ์)');
-			if (leafPlans[20]) await createDocWithStatus(wf2.id, leafPlans[20].id, proc1U.id, 'REJECTED', 'จัดซื้อโปรเจคเตอร์ (ถูกปฏิเสธ)');
-			if (leafPlans[21]) await createDocWithStatus(wf1.id, leafPlans[21].id, proc1U.id, 'CANCELLED', 'จัดซื้อพัดลม (ยกเลิก)');
-			if (leafPlans[22]) await createDocWithStatus(wf3.id, leafPlans[22].id, proc1U.id, 'APPROVED_PROCUREMENT', 'จัดซื้อเตียงผู้ป่วย (เสร็จสมบูรณ์)');
-			if (leafPlans[23]) await createDocWithStatus(wf2.id, leafPlans[23].id, proc1U.id, 'CANCELLED', 'จัดซื้อตู้เย็นเก็บยา (ยกเลิก)');
-
-			console.log('✅ Documents seeded with proper step assignments + dika sub-steps');
+		if (leafPlans.length >= 6 && proc1U && directorU) {
+			await createV2Doc(leafPlans[0].id, 'type1_nParcel', 'specific_lte100k', proc1U.id, 'จัดซื้อวัสดุสำนักงาน');
+			await createV2Doc(leafPlans[1].id, 'type1_nParcel', 'specific_gt100k', proc1U.id, 'จัดซื้อเครื่องพิมพ์ Laser');
+			await createV2Doc(leafPlans[2].id, 'type2_iParcelUtil', 'specific_lte100k', proc1U.id, 'ค่าไฟฟ้าประจำเดือน');
+			await createV2Doc(leafPlans[3].id, 'type3_iParcel', 'selection', proc1U.id, 'ค่าซ่อมบำรุงเครื่องปรับอากาศ');
+			await createV2Doc(leafPlans[4].id, 'type1_nParcel', 'e_bidding', proc1U.id, 'จัดซื้อเครื่อง CT Scan (รอจัดทำเอกสาร)', 'EXECUTION');
+			await createV2Doc(leafPlans[5].id, 'type1_nParcel', 'selection', proc1U.id, 'จัดซื้อครุภัณฑ์ห้องผ่าตัด (รอจัดทำเอกสาร)', 'EXECUTION');
+			if (leafPlans[6]) await createV2Doc(leafPlans[6].id, 'type2_iParcelUtil', 'specific_lte100k', proc1U.id, 'ค่าน้ำประปา (รอจัดทำเอกสาร)', 'EXECUTION');
+			if (leafPlans[7]) await createV2Doc(leafPlans[7].id, 'type4_iFinance', null, proc1U.id, 'ค่าล่วงเวลาบุคลากร');
+			if (leafPlans[8]) await createV2Doc(leafPlans[8].id, 'type5_project', null, proc1U.id, 'โครงการอบรมพัฒนาบุคลากร');
+			if (leafPlans[9]) await createV2Doc(leafPlans[9].id, 'type1_nParcel', 'specific_lte100k', proc1U.id, 'จัดซื้อกระดาษ A4 (เสร็จสิ้น)', 'COMPLETED');
+			console.log('✅ V2 Documents seeded with approval steps + payment rounds');
 		}
 	} else {
 		console.log('ℹ️  Documents already exist');
@@ -1395,6 +1143,67 @@ async function seed() {
 	console.log('   กรรมการ 1 (พยาบาล):            committee1@hospital.go.th');
 	console.log('   กรรมการ 2 (เภสัชกร):           committee2@hospital.go.th');
 	console.log('   กรรมการ 3 (IT):                committee3@hospital.go.th');
+
+	// ──────────────────────────────────────────
+	// V2: Agency Settings (แผนกหลัก)
+	// ──────────────────────────────────────────
+	const allAgencies = await db.select().from(schema.agencies);
+	for (const agency of allAgencies) {
+		const units = await db.select().from(schema.orgUnits).where(eq(schema.orgUnits.agency_id, agency.id));
+		if (units.length === 0) continue;
+
+		// Try to find planning/procurement/finance units by name
+		const planningUnit = units.find(u => u.name.includes('แผนงาน') || u.name.includes('วิชาการ'));
+		const procurementUnit = units.find(u => u.name.includes('พัสดุ') || u.name.includes('จัดซื้อ'));
+		const financeUnit = units.find(u => u.name.includes('การเงิน') || u.name.includes('บัญชี'));
+
+		if (planningUnit || procurementUnit || financeUnit) {
+			const existing = await db.select().from(schema.agencySettings).where(eq(schema.agencySettings.agency_id, agency.id));
+			if (existing.length === 0) {
+				await db.insert(schema.agencySettings).values({
+					agency_id: agency.id,
+					planning_unit_id: planningUnit?.id ?? null,
+					procurement_unit_id: procurementUnit?.id ?? null,
+					finance_unit_id: financeUnit?.id ?? null
+				});
+			}
+		}
+	}
+	console.log('✅ Agency settings seeded (v2)');
+
+	// ──────────────────────────────────────────
+	// V2: Document type + procurement method reference
+	// ──────────────────────────────────────────
+	console.log('');
+	console.log('═══════════════════════════════════════════');
+	console.log('  V2 Procurement Flow Reference');
+	console.log('═══════════════════════════════════════════');
+	console.log('');
+	console.log('📋 Document Types:');
+	console.log('   type1_nParcel     — ซื้อครั้งเดียว จ่ายครั้งเดียว');
+	console.log('   type2_iParcelUtil — ค่าสาธารณูปโภค (จ่ายหลายรอบ ไม่ผ่าน ผอ.)');
+	console.log('   type3_iParcel     — ค่าซ่อมบำรุง (จ่ายหลายรอบ ผ่าน ผอ.)');
+	console.log('   type4_iFinance    — ค่าตอบแทน (ตรงไปการเงิน)');
+	console.log('   type5_project     — โครงการ (มีเอกสารย่อย)');
+	console.log('');
+	console.log('📦 Procurement Methods (for type1/2/3):');
+	console.log('   specific_lte100k  — วิธีเฉพาะเจาะจง ≤100K   → quotations, vendor_selection, purchase_order, inspection');
+	console.log('   specific_gt100k   — วิธีเฉพาะเจาะจง >100K   → tor, median_price, quotations, vendor_selection, contract, inspection');
+	console.log('   selection          — วิธีคัดเลือก             → tor, median_price, invitation, procurement_committee, vendor_selection, contract, inspection');
+	console.log('   e_bidding          — e-Bidding                → tor, median_price, announcement, procurement_committee, vendor_proposals, evaluation, winner_announcement, contract, inspection');
+	console.log('   e_market           — e-Market                 → tor, median_price, e_catalog, evaluation, contract, inspection');
+	console.log('');
+	console.log('🔄 Approval Flow (ทุก type):');
+	console.log('   1. แผนกรับผิดชอบ — ร่าง');
+	console.log('   2. หัวหน้าแผนก — อนุมัติ');
+	console.log('   3. แผนกแผนงาน — ตรวจสอบ');
+	console.log('   4. หัวหน้าแผนงาน — เสนอ ผอ.');
+	console.log('   5. ผู้อำนวยการ — อนุมัติ');
+	console.log('');
+	console.log('💰 Payment Flow (after approval):');
+	console.log('   type1/2/3 → procurement (consolidated bill) → finance (dika)');
+	console.log('   type4     → finance (dika) directly');
+	console.log('   type5     → project items management');
 
 	process.exit(0);
 }

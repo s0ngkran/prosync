@@ -9,6 +9,7 @@
 	import { watchFormResult } from '$lib/stores/toast.svelte';
 	import { swalConfirmDelete } from '$lib/utils/swal';
 	import { decrementProcurement } from '$lib/stores/taskCounts.svelte';
+	import ConsolidatedBillForm from '$lib/components/procurement/ConsolidatedBillForm.svelte';
 
 	let { data, form: formResult } = $props();
 
@@ -75,12 +76,248 @@
 	let uiSchema = $derived(data.currentStep?.ui_schema as any);
 </script>
 
+{#if data.isV2}
+<!-- ═══════════════════════ V2 Procurement Flow ═══════════════════════ -->
 <div>
 	<div class="mb-6">
 		<BackButton href="/procurement/documents" label="กลับหน้าเอกสารดำเนินการ" />
-		<h1 style="margin: 8px 0 4px 0; font-size: clamp(1.375rem, 1.1rem + 0.7vw, 1.625rem); font-weight: 700; color: oklch(0.2 0.02 180);">เอกสาร #{data.document.id}</h1>
+		<h1 style="margin: 8px 0 4px 0; font-size: clamp(1.375rem, 1.1rem + 0.7vw, 1.625rem); font-weight: 700; color: oklch(0.2 0.02 180);">เอกสารจัดซื้อจัดจ้าง</h1>
+		<p class="text-sm" style="color: var(--color-slate-500)">
+			{{ type1_nParcel: 'ซื้อครั้งเดียว จ่ายครั้งเดียว', type2_iParcelUtil: 'ค่าสาธารณูปโภค', type3_iParcel: 'ค่าซ่อมบำรุง', type4_iFinance: 'ค่าตอบแทน (ตรงการเงิน)', type5_project: 'โครงการ' }[data.document.doc_type ?? ''] ?? data.document.doc_type} | แผน: {data.plan.title}
+		</p>
+		<div class="mt-2 flex gap-2">
+			<StatusBadge status={data.document.status} />
+			<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+				style="background: var(--color-brand-50); color: var(--color-brand-700)">
+				{data.document.phase === 'APPROVAL' ? 'ขั้นตอนอนุมัติ' : data.document.phase === 'EXECUTION' ? 'ขั้นตอนดำเนินการ' : data.document.phase === 'COMPLETED' ? 'เสร็จสิ้น' : data.document.phase}
+			</span>
+		</div>
+	</div>
+
+	<!-- Approval Phase -->
+	{#if data.document.phase === 'APPROVAL'}
+		<div class="mb-6">
+			<h2 class="mb-3 text-base font-semibold" style="color: var(--color-slate-800)">ขั้นตอนอนุมัติ</h2>
+			<div class="space-y-2">
+				{#each data.approvalSteps.sort((a: any, b: any) => a.step_sequence - b.step_sequence) as step}
+					{@const isCurrent = step.status === 'IN_PROGRESS'}
+					{@const isDone = step.status === 'APPROVED'}
+					{@const isRejected = step.status === 'REJECTED'}
+					{@const canAct = isCurrent && (data.user.is_super_admin || step.assigned_user_id === data.user.sub)}
+					<div
+						class="flex items-center gap-3 rounded-lg p-3 transition-colors"
+						style="background: {isCurrent ? 'var(--color-brand-50)' : isDone ? 'var(--color-green-50)' : isRejected ? 'var(--color-red-50)' : 'var(--color-slate-50)'}; border: 1px solid {isCurrent ? 'var(--color-brand-200)' : isDone ? 'var(--color-green-200)' : isRejected ? 'var(--color-red-200)' : 'var(--color-slate-100)'}"
+					>
+						<!-- Step indicator -->
+						<div
+							class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold"
+							style="background: {isDone ? 'var(--color-green-500)' : isRejected ? 'var(--color-red-500)' : isCurrent ? 'var(--color-brand-500)' : 'var(--color-slate-300)'}; color: white"
+						>
+							{#if isDone}
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:14px;height:14px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+							{:else if isRejected}
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:14px;height:14px"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+							{:else}
+								{step.step_sequence}
+							{/if}
+						</div>
+
+						<!-- Step info -->
+						<div class="min-w-0 flex-1">
+							<p class="text-sm font-medium" style="color: var(--color-slate-800)">{step.step_name}</p>
+							{#if step.comment}
+								<p class="mt-0.5 text-xs" style="color: var(--color-slate-500)">"{step.comment}"</p>
+							{/if}
+						</div>
+
+						<!-- Action buttons -->
+						{#if canAct}
+							<div class="flex flex-shrink-0 gap-2">
+								<form method="POST" action="?/approveStep" use:enhance={handleStepComplete()}>
+									<input type="hidden" name="step_id" value={step.id} />
+									<input type="hidden" name="action" value="APPROVED" />
+									<button type="submit" class="rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-colors" style="background: var(--color-green-500)">
+										อนุมัติ
+									</button>
+								</form>
+								<form method="POST" action="?/approveStep" use:enhance={handleStepComplete()}>
+									<input type="hidden" name="step_id" value={step.id} />
+									<input type="hidden" name="action" value="REJECTED" />
+									<button type="submit" class="rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-colors" style="background: var(--color-red-500)">
+										ปฏิเสธ
+									</button>
+								</form>
+							</div>
+						{:else if isDone}
+							<span class="text-xs" style="color: var(--color-green-600)">เสร็จสิ้น</span>
+						{:else if isRejected}
+							<span class="text-xs" style="color: var(--color-red-600)">ปฏิเสธ</span>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Execution Phase: Consolidated Bill Form + Payment Tracking -->
+	{#if data.document.phase === 'EXECUTION' || data.document.phase === 'COMPLETED'}
+		{#each data.paymentRounds.sort((a: any, b: any) => a.round_number - b.round_number) as round}
+			{@const statusLabels = {
+				BILL_PENDING: 'รอจัดทำเอกสาร',
+				BILL_CREATED: 'จัดทำเอกสารแล้ว',
+				SENT_TO_FINANCE: 'ส่งการเงินแล้ว',
+				FINANCE_SEEN: 'การเงินรับทราบ',
+				DIKA_CREATED: 'สร้างฎีกาแล้ว',
+				DIRECTOR_APPROVED: 'ผอ. อนุมัติแล้ว',
+				PAID: 'จ่ายเงินแล้ว',
+				STAMPED: 'ประทับจ่ายแล้ว'
+			}}
+			<div class="mb-6">
+				<!-- Round header -->
+				<div class="mb-3 flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<h2 class="text-base font-semibold" style="color: oklch(0.25 0.02 180)">
+							{#if data.paymentRounds.length > 1}รอบที่ {round.round_number} —{/if}
+							{statusLabels[round.status] ?? round.status}
+						</h2>
+					</div>
+					{#if round.finance_seen_at}
+						{@const seen = new Date(round.finance_seen_at)}
+						{@const daysDiff = Math.floor((Date.now() - seen.getTime()) / (1000 * 60 * 60 * 24))}
+						{@const daysLeft = 90 - daysDiff}
+						<span class="text-xs font-medium" style="color: {daysLeft <= 0 ? 'oklch(0.5 0.2 25)' : daysLeft <= 15 ? 'oklch(0.5 0.15 60)' : 'oklch(0.42 0.14 150)'}">
+							{daysLeft <= 0 ? `เกินกำหนด ${Math.abs(daysLeft)} วัน` : `เหลือ ${daysLeft} วัน`}
+						</span>
+					{/if}
+				</div>
+
+				<!-- BILL_PENDING: Show ConsolidatedBillForm -->
+				{#if round.status === 'BILL_PENDING' && data.document.procurement_method}
+					<ConsolidatedBillForm
+						procurementMethod={data.document.procurement_method}
+						billPayload={round.bill_payload ?? {}}
+						users={data.users}
+						vendors={data.vendors}
+						roundId={round.id}
+						onsave={async (payload) => {
+							const formData = new FormData();
+							formData.set('round_id', String(round.id));
+							formData.set('bill_payload', JSON.stringify(payload));
+							const res = await fetch('?/saveBillDraft', { method: 'POST', body: formData });
+						}}
+						onsubmit={async (payload) => {
+							const formData = new FormData();
+							formData.set('round_id', String(round.id));
+							formData.set('bill_payload', JSON.stringify(payload));
+							const res = await fetch('?/submitBill', { method: 'POST', body: formData });
+							if (res.ok) window.location.reload();
+						}}
+					/>
+				{:else if round.status === 'BILL_CREATED' || round.status === 'SENT_TO_FINANCE'}
+					<!-- Bill submitted, show read-only summary -->
+					<div class="rounded-lg p-4" style="background: oklch(0.54 0.16 150 / 0.04); border: 1px solid oklch(0.54 0.16 150 / 0.15)">
+						<p class="text-sm font-medium" style="color: oklch(0.38 0.14 150)">
+							{round.status === 'SENT_TO_FINANCE' ? 'ส่งเอกสารไปฝ่ายการเงินแล้ว — รอการเงินดำเนินการ' : 'จัดทำเอกสารแล้ว — รอส่งการเงิน'}
+						</p>
+						{#if round.status === 'BILL_CREATED'}
+							<form method="POST" action="?/advanceRound" use:enhance class="mt-3">
+								<input type="hidden" name="round_id" value={round.id} />
+								<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium text-white" style="background: oklch(0.52 0.14 240)">ส่งการเงิน</button>
+							</form>
+						{/if}
+					</div>
+				{:else if round.status !== 'BILL_PENDING'}
+					<!-- Finance phase: tracking -->
+					<div class="rounded-lg p-4" style="background: oklch(0.97 0.005 180); border: 1px solid oklch(0.92 0.005 180)">
+						<p class="mb-2 text-sm" style="color: oklch(0.4 0.02 180)">สถานะ: <strong>{statusLabels[round.status] ?? round.status}</strong></p>
+						{#if round.check_no}
+							<p class="text-xs" style="color: oklch(0.55 0.02 180)">เช็คเลขที่: {round.check_no} | วันที่: {round.check_date}</p>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{/each}
+
+		<!-- Multi-round: add new round button -->
+		{#if data.document.phase === 'EXECUTION' && ['type2_iParcelUtil', 'type3_iParcel', 'type4_iFinance'].includes(data.document.doc_type ?? '')}
+			{@const lastRound = data.paymentRounds[data.paymentRounds.length - 1]}
+			{#if lastRound?.status === 'STAMPED'}
+				<form method="POST" action="?/createNextRound" use:enhance>
+					<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium" style="background: oklch(0.52 0.14 240 / 0.08); color: oklch(0.42 0.14 240); border: 1px solid oklch(0.52 0.14 240 / 0.2)">+ สร้างรอบถัดไป</button>
+				</form>
+			{/if}
+		{/if}
+
+		{#if data.paymentRounds.length === 0}
+			<p class="text-sm" style="color: oklch(0.55 0.02 180)">ยังไม่มีรอบการจ่ายเงิน</p>
+		{/if}
+	{/if}
+
+	<!-- Type5 Project Items -->
+	{#if data.document.doc_type === 'type5_project' && (data.document.phase === 'EXECUTION' || data.document.phase === 'COMPLETED')}
+		<div class="mb-6">
+			<h2 class="mb-3 text-base font-semibold" style="color: var(--color-slate-800)">รายการโครงการ</h2>
+			{#if data.document.phase === 'EXECUTION'}
+				<form method="POST" action="?/createProjectItem" use:enhance class="mb-4 rounded-lg p-4" style="background: var(--color-slate-50); border: 1px solid var(--color-slate-200)">
+					<div class="grid grid-cols-3 gap-3">
+						<div>
+							<label class="mb-1 block text-xs font-medium" style="color: var(--color-slate-600)">ชื่อรายการ</label>
+							<input name="item_name" required class="w-full rounded-lg px-3 py-2 text-sm outline-none" style="border: 1px solid var(--color-slate-200)" />
+						</div>
+						<div>
+							<label class="mb-1 block text-xs font-medium" style="color: var(--color-slate-600)">ประเภท</label>
+							<select name="item_type" required class="w-full rounded-lg px-3 py-2 text-sm" style="border: 1px solid var(--color-slate-200)">
+								<option value="pFinance">pFinance (ยืมเงิน)</option>
+								<option value="pParcel">pParcel (จัดซื้อ)</option>
+							</select>
+						</div>
+						<div>
+							<label class="mb-1 block text-xs font-medium" style="color: var(--color-slate-600)">งบประมาณ</label>
+							<div class="flex gap-2">
+								<input name="estimated_amount" type="number" step="0.01" class="w-full rounded-lg px-3 py-2 text-sm outline-none" style="border: 1px solid var(--color-slate-200)" />
+								<button type="submit" class="flex-shrink-0 rounded-lg px-3 py-2 text-xs font-medium text-white" style="background: var(--color-brand-500)">เพิ่ม</button>
+							</div>
+						</div>
+					</div>
+				</form>
+			{/if}
+			{#each data.projectItems as item}
+				<div class="mb-2 flex items-center gap-3 rounded-lg p-3" style="background: white; border: 1px solid var(--color-slate-200)">
+					<div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[0.625rem] font-bold"
+						style="background: {item.item_type === 'pFinance' ? 'oklch(0.94 0.08 85)' : 'oklch(0.93 0.06 240)'}; color: {item.item_type === 'pFinance' ? 'oklch(0.45 0.12 85)' : 'oklch(0.45 0.12 240)'}">
+						{item.item_type === 'pFinance' ? 'F' : 'P'}
+					</div>
+					<div class="min-w-0 flex-1">
+						<span class="text-sm font-medium" style="color: oklch(0.25 0.02 180)">{item.item_name}</span>
+						<span class="ml-2 text-xs" style="color: oklch(0.55 0.02 180)">
+							{item.item_type === 'pFinance' ? 'ยืมเงิน' : 'จัดซื้อ'} | งบ: {Number(item.estimated_amount).toLocaleString()} บาท
+						</span>
+					</div>
+					<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[0.625rem] font-medium"
+						style="background: {item.status === 'COMPLETED' ? 'oklch(0.93 0.08 150)' : 'oklch(0.95 0.01 180)'}; color: {item.status === 'COMPLETED' ? 'oklch(0.38 0.12 150)' : 'oklch(0.5 0.02 180)'}">
+						{item.status === 'COMPLETED' ? 'เสร็จสิ้น' : item.status === 'IN_PROGRESS' ? 'กำลังดำเนินการ' : 'รอดำเนินการ'}
+					</span>
+				</div>
+			{/each}
+			{#if data.document.phase === 'EXECUTION' && data.projectItems.length > 0}
+				<form method="POST" action="?/closeProject" use:enhance class="mt-3">
+					<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium text-white" style="background: oklch(0.54 0.16 150)">
+						ปิดโครงการ + คืนเงินเหลือ
+					</button>
+				</form>
+			{/if}
+		</div>
+	{/if}
+</div>
+
+{:else}
+<!-- ═══════════════════════ Legacy Workflow ═══════════════════════ -->
+<div>
+	<div class="mb-6">
+		<BackButton href="/procurement/documents" label="กลับหน้าเอกสารดำเนินการ" />
+		<h1 style="margin: 8px 0 4px 0; font-size: clamp(1.375rem, 1.1rem + 0.7vw, 1.625rem); font-weight: 700; color: oklch(0.2 0.02 180);">เอกสารจัดซื้อจัดจ้าง</h1>
 		<p class="text-sm text-gray-500">
-			{data.workflow.name} | แผน: {data.plan.title}
+			{data.workflow?.name} | แผน: {data.plan.title}
 		</p>
 		<div class="mt-2">
 			<StatusBadge status={data.document.status} />
@@ -619,6 +856,7 @@
 		</div>
 	</details>
 </div>
+{/if}
 
 <style>
 	/* Step Progress */

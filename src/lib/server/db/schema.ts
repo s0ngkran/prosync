@@ -99,6 +99,17 @@ export const orgUnits = pgTable('org_units', {
 	head_of_unit_id: integer('head_of_unit_id').references(() => users.id)
 });
 
+export const agencySettings = pgTable('agency_settings', {
+	id: serial('id').primaryKey(),
+	agency_id: integer('agency_id')
+		.notNull()
+		.references(() => agencies.id)
+		.unique(),
+	planning_unit_id: integer('planning_unit_id').references(() => orgUnits.id),
+	procurement_unit_id: integer('procurement_unit_id').references(() => orgUnits.id),
+	finance_unit_id: integer('finance_unit_id').references(() => orgUnits.id)
+});
+
 export const roles = pgTable('roles', {
 	id: serial('id').primaryKey(),
 	name: varchar('name', { length: 100 }).notNull(),
@@ -243,19 +254,22 @@ export const vendors = pgTable('vendors', {
 
 export const documents = pgTable('documents', {
 	id: serial('id').primaryKey(),
+	slug: varchar('slug', { length: 36 }).notNull().unique(), // UUID for public URLs
 	agency_id: integer('agency_id')
 		.notNull()
 		.references(() => agencies.id),
-	workflow_id: integer('workflow_id')
-		.notNull()
-		.references(() => workflows.id),
+	workflow_id: integer('workflow_id').references(() => workflows.id), // nullable for new doc types
 	plan_id: integer('plan_id')
 		.notNull()
 		.references(() => plans.id),
 	current_step_id: integer('current_step_id'),
 	payload: jsonb('payload').default({}),
 	status: varchar('status', { length: 50 }).notNull().default('IN_PROGRESS'),
-	updated_by: integer('updated_by').references(() => users.id)
+	updated_by: integer('updated_by').references(() => users.id),
+	// New procurement flow fields
+	doc_type: varchar('doc_type', { length: 30 }),
+	procurement_method: varchar('procurement_method', { length: 50 }),
+	phase: varchar('phase', { length: 20 }).notNull().default('LEGACY')
 });
 
 export const documentCommittees = pgTable('document_committees', {
@@ -362,11 +376,12 @@ export const dikaVouchers = pgTable(
 		net_amount: numeric('net_amount', { precision: 15, scale: 2 }).notNull(),
 		status: varchar('status', { length: 50 }).notNull().default('PENDING_EXAMINE'),
 		examiner_id: integer('examiner_id').references(() => users.id),
-		director_id: integer('director_id').references(() => users.id)
+		director_id: integer('director_id').references(() => users.id),
+		payment_round_id: integer('payment_round_id') // FK added via migration, no circular ref in Drizzle
 	},
 	(table) => ({
-		uniqueActiveDika: uniqueIndex('idx_unique_active_dika')
-			.on(table.document_id)
+		uniqueActiveDikaRound: uniqueIndex('idx_unique_active_dika_round')
+			.on(table.document_id, table.payment_round_id)
 			.where(sql`status NOT IN ('REJECTED', 'CANCELLED')`)
 	})
 );
@@ -426,4 +441,86 @@ export const loans = pgTable('loans', {
 	created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	approved_at: timestamp('approved_at', { withTimezone: true }),
 	repaid_at: timestamp('repaid_at', { withTimezone: true })
+});
+
+// ──────────────────────────────────────────────
+// Procurement Flow v2 (Approval + Payment Rounds)
+// ──────────────────────────────────────────────
+
+export const documentApprovalSteps = pgTable('document_approval_steps', {
+	id: serial('id').primaryKey(),
+	document_id: integer('document_id')
+		.notNull()
+		.references(() => documents.id),
+	step_sequence: integer('step_sequence').notNull(),
+	step_code: varchar('step_code', { length: 50 }).notNull(),
+	step_name: varchar('step_name', { length: 100 }).notNull(),
+	assigned_user_id: integer('assigned_user_id').references(() => users.id),
+	status: varchar('status', { length: 20 }).notNull().default('PENDING'),
+	comment: text('comment'),
+	attachment_urls: jsonb('attachment_urls'),
+	completed_at: timestamp('completed_at', { withTimezone: true }),
+	created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export const paymentRounds = pgTable(
+	'payment_rounds',
+	{
+		id: serial('id').primaryKey(),
+		document_id: integer('document_id')
+			.notNull()
+			.references(() => documents.id),
+		round_number: integer('round_number').notNull().default(1),
+		status: varchar('status', { length: 30 }).notNull().default('BILL_PENDING'),
+		current_actor_role: varchar('current_actor_role', { length: 30 }),
+
+		// Bill data
+		bill_payload: jsonb('bill_payload'),
+		bill_created_by: integer('bill_created_by').references(() => users.id),
+		bill_created_at: timestamp('bill_created_at', { withTimezone: true }),
+
+		// Finance tracking
+		sent_to_finance_at: timestamp('sent_to_finance_at', { withTimezone: true }),
+		finance_seen_at: timestamp('finance_seen_at', { withTimezone: true }),
+		finance_seen_by: integer('finance_seen_by').references(() => users.id),
+
+		// Dika
+		dika_voucher_id: integer('dika_voucher_id').references(() => dikaVouchers.id),
+
+		// Payment
+		check_no: varchar('check_no', { length: 50 }),
+		check_date: date('check_date'),
+		paid_at: timestamp('paid_at', { withTimezone: true }),
+		paid_by: integer('paid_by').references(() => users.id),
+
+		// Stamp money out
+		stamped_at: timestamp('stamped_at', { withTimezone: true }),
+		stamped_by: integer('stamped_by').references(() => users.id),
+
+		created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		uniqueRound: uniqueIndex('idx_payment_round_unique').on(
+			table.document_id,
+			table.round_number
+		)
+	})
+);
+
+export const projectItems = pgTable('project_items', {
+	id: serial('id').primaryKey(),
+	document_id: integer('document_id')
+		.notNull()
+		.references(() => documents.id),
+	item_name: varchar('item_name', { length: 255 }).notNull(),
+	item_type: varchar('item_type', { length: 20 }).notNull(), // 'pFinance' | 'pParcel'
+	estimated_amount: numeric('estimated_amount', { precision: 15, scale: 2 })
+		.notNull()
+		.default('0'),
+	actual_amount: numeric('actual_amount', { precision: 15, scale: 2 }).notNull().default('0'),
+	status: varchar('status', { length: 30 }).notNull().default('PENDING'),
+	child_document_id: integer('child_document_id').references(() => documents.id),
+	loan_id: integer('loan_id').references(() => loans.id),
+	return_amount: numeric('return_amount', { precision: 15, scale: 2 }),
+	created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });

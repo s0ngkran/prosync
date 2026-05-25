@@ -40,6 +40,35 @@
 	// Plan execution
 	let planExec = $derived(stats.planExecutionRate as { total: number; started: number; percentage: string } | undefined);
 
+	// Budget comparison helpers
+	let incomePct = $derived(
+		budgetSummary && budgetSummary.income.estimated > 0
+			? (budgetSummary.income.actual / budgetSummary.income.estimated) * 100
+			: 0
+	);
+	let expensePct = $derived(
+		budgetSummary && budgetSummary.expense.estimated > 0
+			? (budgetSummary.expense.actual / budgetSummary.expense.estimated) * 100
+			: 0
+	);
+	let incomeDiff = $derived(
+		budgetSummary ? budgetSummary.income.actual - budgetSummary.income.estimated : 0
+	);
+	let expenseDiff = $derived(
+		budgetSummary ? budgetSummary.expense.actual - budgetSummary.expense.estimated : 0
+	);
+	let netBalance = $derived(
+		budgetSummary
+			? (budgetSummary.income.actual - budgetSummary.expense.actual)
+			: 0
+	);
+	let maxIncome = $derived(
+		budgetSummary ? Math.max(budgetSummary.income.estimated, budgetSummary.income.actual, 1) : 1
+	);
+	let maxExpense = $derived(
+		budgetSummary ? Math.max(budgetSummary.expense.estimated, budgetSummary.expense.actual, 1) : 1
+	);
+
 	// Format helper
 	function fmtBahtShort(val: number): string {
 		if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
@@ -138,58 +167,124 @@
 				<h2 class="section-title">ภาพรวมงบประมาณ</h2>
 			</div>
 			<div class="budget-section">
-				<div class="budget-overview">
-					<div class="budget-main">
-						<h3 class="label-sm">งบประมาณรวม</h3>
-						<div class="budget-big-number">{formatBaht(totalEstimated)}</div>
-						<div class="budget-bar-container">
-							<div
-								class="budget-bar-fill"
-								style="width: {Math.min(Number(utilizationPct), 100)}%;"
-							></div>
-						</div>
-						<div class="budget-bar-legend">
-							<span>ใช้ไปแล้ว {utilizationPct}% ({formatBaht(totalActual)})</span>
-							<span>คงเหลือ {formatBaht(totalRemaining)}</span>
-						</div>
+				<!-- Net balance summary strip -->
+				<div class="budget-net-strip">
+					<div class="net-strip-item">
+						<span class="net-strip-label">งบประมาณรวม</span>
+						<span class="net-strip-value">{formatBaht(totalEstimated)}</span>
 					</div>
-					<div class="budget-breakdown">
-						<div class="budget-type-card">
-							<div class="type-indicator income-indicator"></div>
-							<div class="type-info">
-								<div class="type-label">รายได้</div>
-								<div class="type-estimated">{formatBaht(budgetSummary.income.estimated)}</div>
-								<div class="type-progress-track">
-									<div
-										class="type-progress-fill income-fill"
-										style="width: {budgetSummary.income.estimated > 0 ? Math.min((budgetSummary.income.actual / budgetSummary.income.estimated) * 100, 100) : 0}%;"
-									></div>
-								</div>
-								<div class="type-actual">
-									รับจริง {formatBaht(budgetSummary.income.actual)}
-									<span class="type-pct">
-										({budgetSummary.income.estimated > 0 ? ((budgetSummary.income.actual / budgetSummary.income.estimated) * 100).toFixed(1) : '0.0'}%)
-									</span>
-								</div>
+					<div class="net-strip-divider"></div>
+					<div class="net-strip-item">
+						<span class="net-strip-label">ใช้ไปแล้ว</span>
+						<span class="net-strip-value">{formatBaht(totalActual)} <span class="net-strip-pct">({utilizationPct}%)</span></span>
+					</div>
+					<div class="net-strip-divider"></div>
+					<div class="net-strip-item">
+						<span class="net-strip-label">รายรับ − รายจ่าย (จริง)</span>
+						<span class="net-strip-value net-balance" class:positive={netBalance >= 0} class:negative={netBalance < 0}>
+							{netBalance >= 0 ? '+' : ''}{formatBaht(netBalance)}
+						</span>
+					</div>
+				</div>
+
+				<!-- Comparison cards -->
+				<div class="compare-grid">
+					<!-- INCOME comparison -->
+					<div class="compare-card">
+						<div class="compare-header">
+							<div class="compare-icon income-icon">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
+								</svg>
+							</div>
+							<div class="compare-title-group">
+								<h3 class="compare-title">รายรับ</h3>
+								<span class="compare-subtitle">เปรียบเทียบแผน vs จริง</span>
+							</div>
+							<div class="compare-badge" class:badge-over={incomePct >= 100} class:badge-under={incomePct < 100}>
+								{incomePct.toFixed(1)}%
 							</div>
 						</div>
-						<div class="budget-type-card">
-							<div class="type-indicator expense-indicator"></div>
-							<div class="type-info">
-								<div class="type-label">รายจ่าย</div>
-								<div class="type-estimated">{formatBaht(budgetSummary.expense.estimated)}</div>
-								<div class="type-progress-track">
-									<div
-										class="type-progress-fill expense-fill"
-										style="width: {budgetSummary.expense.estimated > 0 ? Math.min((budgetSummary.expense.actual / budgetSummary.expense.estimated) * 100, 100) : 0}%;"
-									></div>
+
+						<div class="compare-bars">
+
+							<div class="bar-row">
+								<span class="bar-label">แผน</span>
+								<div class="bar-track">
+									<div class="bar-fill plan-fill income-plan" style="width: {(budgetSummary.income.estimated / maxIncome) * 100}%;"></div>
 								</div>
-								<div class="type-actual">
-									จ่ายจริง {formatBaht(budgetSummary.expense.actual)}
-									<span class="type-pct">
-										({budgetSummary.expense.estimated > 0 ? ((budgetSummary.expense.actual / budgetSummary.expense.estimated) * 100).toFixed(1) : '0.0'}%)
-									</span>
+								<span class="bar-amount">{formatBaht(budgetSummary.income.estimated)}</span>
+							</div>
+							<div class="bar-row">
+								<span class="bar-label">จริง</span>
+								<div class="bar-track">
+									<div class="bar-fill actual-fill income-actual" style="width: {(budgetSummary.income.actual / maxIncome) * 100}%;"></div>
 								</div>
+								<span class="bar-amount">{formatBaht(budgetSummary.income.actual)}</span>
+							</div>
+						</div>
+
+						<div class="compare-footer">
+							<div class="diff-indicator" class:diff-positive={incomeDiff >= 0} class:diff-negative={incomeDiff < 0}>
+								<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+									{#if incomeDiff >= 0}
+										<path fill-rule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clip-rule="evenodd" />
+									{:else}
+										<path fill-rule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clip-rule="evenodd" />
+									{/if}
+								</svg>
+								<span>{incomeDiff >= 0 ? 'รับเกินแผน' : 'รับต่ำกว่าแผน'}</span>
+								<strong>{formatBaht(Math.abs(incomeDiff))}</strong>
+							</div>
+						</div>
+					</div>
+
+					<!-- EXPENSE comparison -->
+					<div class="compare-card">
+						<div class="compare-header">
+							<div class="compare-icon expense-icon">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6L9 12.75l4.286-4.286a11.948 11.948 0 014.306 6.43l.776 2.898m0 0l3.182-5.511m-3.182 5.51l-5.511-3.181" />
+								</svg>
+							</div>
+							<div class="compare-title-group">
+								<h3 class="compare-title">รายจ่าย</h3>
+								<span class="compare-subtitle">เปรียบเทียบแผน vs จริง</span>
+							</div>
+							<div class="compare-badge" class:badge-safe={expensePct <= 100} class:badge-danger={expensePct > 100}>
+								{expensePct.toFixed(1)}%
+							</div>
+						</div>
+
+						<div class="compare-bars">
+
+							<div class="bar-row">
+								<span class="bar-label">แผน</span>
+								<div class="bar-track">
+									<div class="bar-fill plan-fill expense-plan" style="width: {(budgetSummary.expense.estimated / maxExpense) * 100}%;"></div>
+								</div>
+								<span class="bar-amount">{formatBaht(budgetSummary.expense.estimated)}</span>
+							</div>
+							<div class="bar-row">
+								<span class="bar-label">จริง</span>
+								<div class="bar-track">
+									<div class="bar-fill actual-fill expense-actual" style="width: {(budgetSummary.expense.actual / maxExpense) * 100}%;"></div>
+								</div>
+								<span class="bar-amount">{formatBaht(budgetSummary.expense.actual)}</span>
+							</div>
+						</div>
+
+						<div class="compare-footer">
+							<div class="diff-indicator" class:diff-positive={expenseDiff <= 0} class:diff-negative={expenseDiff > 0}>
+								<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+									{#if expenseDiff <= 0}
+										<path fill-rule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clip-rule="evenodd" />
+									{:else}
+										<path fill-rule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clip-rule="evenodd" />
+									{/if}
+								</svg>
+								<span>{expenseDiff <= 0 ? 'ประหยัดกว่าแผน' : 'จ่ายเกินแผน'}</span>
+								<strong>{formatBaht(Math.abs(expenseDiff))}</strong>
 							</div>
 						</div>
 					</div>
@@ -576,120 +671,268 @@
 		animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
-	.budget-overview {
-		display: grid;
-		grid-template-columns: 1.4fr 1fr;
-		gap: 28px;
+	/* Net balance summary strip */
+	.budget-net-strip {
+		display: flex;
+		align-items: center;
+		gap: 0;
+		padding: 18px 28px;
 		background: oklch(0.98 0.005 180);
-		border: 1px solid oklch(0.88 0.01 180);
-		border-radius: 16px;
-		padding: 28px;
+		border: 1px solid oklch(0.9 0.005 180);
+		border-radius: 14px;
+		margin-bottom: 20px;
 	}
 
-	.label-sm {
-		margin: 0 0 8px 0;
-		font-size: 0.8125rem;
+	.net-strip-item {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.net-strip-label {
+		font-size: 0.75rem;
 		font-weight: 500;
 		color: oklch(0.5 0.02 180);
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.04em;
 	}
 
-	.budget-big-number {
-		font-size: clamp(1.5rem, 1.2rem + 0.8vw, 2rem);
+	.net-strip-value {
+		font-size: clamp(1.0625rem, 0.9rem + 0.4vw, 1.3125rem);
 		font-weight: 700;
 		color: oklch(0.25 0.02 180);
-		margin-bottom: 16px;
-		line-height: 1;
+		font-variant-numeric: tabular-nums;
 	}
 
-	.budget-bar-container {
-		height: 10px;
-		background: oklch(0.92 0.005 180);
-		border-radius: 5px;
-		overflow: hidden;
-		margin-bottom: 8px;
-	}
-
-	.budget-bar-fill {
-		height: 100%;
-		border-radius: 5px;
-		background: linear-gradient(90deg, oklch(0.52 0.14 240), oklch(0.54 0.16 150));
-		animation: grow-right 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
-	}
-
-	.budget-bar-legend {
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.8125rem;
-		color: oklch(0.5 0.02 180);
-	}
-
-	.budget-breakdown {
-		display: flex;
-		flex-direction: column;
-		gap: 16px;
-	}
-
-	.budget-type-card {
-		display: flex;
-		gap: 14px;
-		padding: 16px;
-		border-radius: 12px;
-		background: oklch(0.99 0.003 180);
-		border: 1px solid oklch(0.9 0.005 180);
-	}
-
-	.type-indicator {
-		width: 4px;
-		border-radius: 2px;
-		flex-shrink: 0;
-	}
-
-	.income-indicator { background: oklch(0.54 0.16 150); }
-	.expense-indicator { background: oklch(0.52 0.14 240); }
-
-	.type-info { flex: 1; }
-
-	.type-label {
+	.net-strip-pct {
 		font-size: 0.8125rem;
 		font-weight: 500;
 		color: oklch(0.5 0.02 180);
-		margin-bottom: 4px;
 	}
 
-	.type-estimated {
-		font-size: clamp(1rem, 0.85rem + 0.4vw, 1.25rem);
-		font-weight: 700;
-		color: oklch(0.25 0.02 180);
-		margin-bottom: 10px;
+	.net-strip-divider {
+		width: 1px;
+		height: 40px;
+		background: oklch(0.88 0.01 180);
+		margin: 0 24px;
+		flex-shrink: 0;
 	}
 
-	.type-progress-track {
-		height: 6px;
-		background: oklch(0.92 0.005 180);
-		border-radius: 3px;
-		overflow: hidden;
-		margin-bottom: 6px;
+	.net-balance.positive {
+		color: oklch(0.48 0.16 150);
 	}
 
-	.type-progress-fill {
-		height: 100%;
-		border-radius: 3px;
-		animation: grow-right 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+	.net-balance.negative {
+		color: oklch(0.5 0.2 25);
 	}
 
-	.income-fill { background: oklch(0.54 0.16 150); }
-	.expense-fill { background: oklch(0.52 0.14 240); }
-
-	.type-actual {
-		font-size: 0.8125rem;
-		color: oklch(0.5 0.02 180);
+	/* Comparison grid */
+	.compare-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 24px;
 	}
 
-	.type-pct {
+	.compare-card {
+		background: oklch(0.995 0.002 180);
+		border: 1px solid oklch(0.9 0.005 180);
+		border-radius: 16px;
+		padding: 24px;
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
+		animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+	}
+
+	.compare-card:nth-child(2) {
+		animation-delay: 0.08s;
+	}
+
+	.compare-header {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+
+	.compare-icon {
+		width: 44px;
+		height: 44px;
+		border-radius: 12px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.compare-icon svg {
+		width: 22px;
+		height: 22px;
+	}
+
+	.income-icon {
+		background: oklch(0.54 0.16 150 / 0.1);
+		color: oklch(0.48 0.16 150);
+	}
+
+	.expense-icon {
+		background: oklch(0.52 0.14 240 / 0.1);
+		color: oklch(0.52 0.14 240);
+	}
+
+	.compare-title-group {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.compare-title {
+		margin: 0;
+		font-size: clamp(1rem, 0.85rem + 0.4vw, 1.125rem);
 		font-weight: 600;
-		color: oklch(0.4 0.02 180);
+		color: oklch(0.25 0.02 180);
+	}
+
+	.compare-subtitle {
+		font-size: 0.75rem;
+		color: oklch(0.55 0.02 180);
+	}
+
+	.compare-badge {
+		padding: 5px 12px;
+		border-radius: 20px;
+		font-size: 0.875rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.badge-over {
+		background: oklch(0.54 0.16 150 / 0.12);
+		color: oklch(0.42 0.14 150);
+	}
+
+	.badge-under {
+		background: oklch(0.62 0.18 60 / 0.12);
+		color: oklch(0.5 0.16 60);
+	}
+
+	.badge-safe {
+		background: oklch(0.54 0.16 150 / 0.12);
+		color: oklch(0.42 0.14 150);
+	}
+
+	.badge-danger {
+		background: oklch(0.5 0.2 25 / 0.12);
+		color: oklch(0.45 0.18 25);
+	}
+
+	/* Comparison bars */
+	.compare-bars {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.bar-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.bar-label {
+		width: 32px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: oklch(0.5 0.02 180);
+		text-align: right;
+		flex-shrink: 0;
+	}
+
+	.bar-track {
+		flex: 1;
+		height: 28px;
+		background: oklch(0.95 0.005 180);
+		border-radius: 6px;
+		overflow: hidden;
+		position: relative;
+	}
+
+	.bar-fill {
+		height: 100%;
+		border-radius: 6px;
+		animation: grow-right 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+		min-width: 2px;
+	}
+
+	.plan-fill {
+		opacity: 0.35;
+	}
+
+	.actual-fill {
+		opacity: 1;
+	}
+
+	.income-plan,
+	.income-actual {
+		background: oklch(0.54 0.16 150);
+	}
+
+	.expense-plan,
+	.expense-actual {
+		background: oklch(0.52 0.14 240);
+	}
+
+	.bar-amount {
+		width: clamp(90px, 10vw, 130px);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: oklch(0.3 0.02 180);
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+		flex-shrink: 0;
+	}
+
+	/* Difference footer */
+	.compare-footer {
+		padding-top: 16px;
+		border-top: 1px solid oklch(0.93 0.005 180);
+	}
+
+	.diff-indicator {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.8125rem;
+		padding: 8px 14px;
+		border-radius: 10px;
+	}
+
+	.diff-indicator span {
+		color: oklch(0.45 0.02 180);
+	}
+
+	.diff-indicator strong {
+		margin-left: auto;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.diff-positive {
+		background: oklch(0.54 0.16 150 / 0.06);
+		color: oklch(0.42 0.14 150);
+	}
+
+	.diff-positive strong {
+		color: oklch(0.42 0.14 150);
+	}
+
+	.diff-negative {
+		background: oklch(0.5 0.2 25 / 0.06);
+		color: oklch(0.45 0.18 25);
+	}
+
+	.diff-negative strong {
+		color: oklch(0.45 0.18 25);
 	}
 
 	/* ── Gauge Card ── */
@@ -1006,8 +1249,21 @@
 			grid-template-columns: 1fr 1fr;
 		}
 
-		.budget-overview {
+		.compare-grid {
 			grid-template-columns: 1fr;
+		}
+
+		.budget-net-strip {
+			flex-wrap: wrap;
+			gap: 16px;
+		}
+
+		.net-strip-divider {
+			display: none;
+		}
+
+		.net-strip-item {
+			min-width: 140px;
 		}
 	}
 
@@ -1020,8 +1276,13 @@
 			grid-template-columns: 1fr;
 		}
 
-		.budget-overview {
-			padding: 20px;
+		.budget-net-strip {
+			padding: 16px 20px;
+		}
+
+		.bar-amount {
+			width: 80px;
+			font-size: 0.75rem;
 		}
 
 		.empty-hint {

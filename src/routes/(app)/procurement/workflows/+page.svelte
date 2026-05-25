@@ -4,6 +4,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import CustomSelect from '$lib/components/CustomSelect.svelte';
 	import { STEP_TYPES, STEP_TYPE_LABELS, COMMITTEE_TYPES, COMMITTEE_LABELS, inferStepType, getStepConfigSummary, type StepType } from '$lib/types/workflow';
+	import { BILL_SECTION_LABELS } from '$lib/types/procurement';
 	import { watchFormResult } from '$lib/stores/toast.svelte';
 	import { swalConfirmDelete } from '$lib/utils/swal';
 	import { decrementProcurement } from '$lib/stores/taskCounts.svelte';
@@ -33,6 +34,35 @@
 
 	// Create workflow: agency selection for super admin
 	let createForAgencyId = $state<string>('');
+
+	// Consolidated method overview (new flow)
+	const methodOverview: Record<string, { name: string; desc: string; icon: string }> = {
+		specific_lte100k: { name: 'วิธีเฉพาะเจาะจง (ไม่เกิน 100,000)', desc: 'สำหรับการจัดซื้อจัดจ้างที่มีวงเงินไม่เกิน 100,000 บาท', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+		specific_gt100k: { name: 'วิธีเฉพาะเจาะจง (เกิน 100,000)', desc: 'สำหรับการจัดซื้อจัดจ้างที่มีวงเงิน 100,000 - 500,000 บาท', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+		selection: { name: 'วิธีคัดเลือก', desc: 'เชิญผู้ขายมาเสนอราคา มีคณะกรรมการประเมิน', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
+		e_bidding: { name: 'e-Bidding', desc: 'ประกวดราคาอิเล็กทรอนิกส์ สำหรับวงเงินเกิน 500,000 บาท', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+		e_market: { name: 'e-Market', desc: 'ซื้อสินค้าจาก e-Catalog ส่วนกลาง', icon: 'M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z' }
+	};
+
+	// Section type icons
+	const sectionIcons: Record<string, { icon: string; color: string }> = {
+		tor: { icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', color: 'oklch(0.42 0.12 240)' },
+		median_price: { icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', color: 'oklch(0.48 0.14 60)' },
+		quotations: { icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z', color: 'oklch(0.45 0.1 280)' },
+		vendor_selection: { icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', color: 'oklch(0.38 0.14 150)' },
+		procurement_committee: { icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7', color: 'oklch(0.45 0.12 200)' },
+		contract: { icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', color: 'oklch(0.42 0.1 30)' },
+		inspection: { icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', color: 'oklch(0.54 0.16 150)' },
+		invitation: { icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z', color: 'oklch(0.45 0.1 280)' },
+		vendor_proposals: { icon: 'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12', color: 'oklch(0.42 0.14 240)' },
+		evaluation: { icon: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z', color: 'oklch(0.48 0.14 60)' },
+		announcement: { icon: 'M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z', color: 'oklch(0.5 0.15 25)' },
+		winner_announcement: { icon: 'M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6', color: 'oklch(0.38 0.14 150)' },
+		purchase_order: { icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', color: 'oklch(0.42 0.1 30)' },
+		e_catalog: { icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', color: 'oklch(0.42 0.14 240)' }
+	};
+
+	let showLegacySteps = $state(false);
 
 	let isSuperAdmin = $derived(data.user.is_super_admin);
 	let userAgencyId = $derived(data.user.agency_id);
@@ -201,6 +231,53 @@
 
 	<!-- Toast notifications handled by global Toast component -->
 
+	<!-- ═══ NEW: Consolidated Method Overview ═══ -->
+	<section style="margin-bottom: 32px">
+		<h2 style="margin: 0 0 4px; font-size: 1.0625rem; font-weight: 700; color: oklch(0.25 0.02 180)">เอกสารที่ต้องจัดทำตามวิธีจัดซื้อ</h2>
+		<p style="margin: 0 0 16px; font-size: 0.8125rem; color: oklch(0.5 0.02 180)">แต่ละวิธีต้องจัดทำเอกสาร ตั้งกรรมการ และดำเนินการตามรายการด้านล่าง (ทำทั้งหมดใน 1 ขั้นตอน)</p>
+
+		<div style="display: flex; flex-direction: column; gap: 10px">
+			{#each Object.entries(methodOverview) as [methodKey, method]}
+				{@const sections = BILL_SECTION_LABELS[methodKey] ?? {}}
+				{@const sectionEntries = Object.entries(sections)}
+				<div style="border: 1px solid oklch(0.92 0.005 180); border-radius: 14px; overflow: hidden; background: white">
+					<!-- Method header -->
+					<div style="display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: oklch(0.98 0.003 240)">
+						<div style="width: 36px; height: 36px; border-radius: 10px; background: oklch(0.52 0.14 240 / 0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+							<svg viewBox="0 0 24 24" fill="none" stroke="oklch(0.42 0.14 240)" stroke-width="1.75" style="width: 18px; height: 18px"><path stroke-linecap="round" stroke-linejoin="round" d={method.icon} /></svg>
+						</div>
+						<div style="flex: 1; min-width: 0">
+							<h3 style="margin: 0; font-size: 0.9375rem; font-weight: 700; color: oklch(0.2 0.02 180)">{method.name}</h3>
+							<p style="margin: 2px 0 0; font-size: 0.6875rem; color: oklch(0.5 0.02 180)">{method.desc}</p>
+						</div>
+						<span style="padding: 3px 12px; border-radius: 8px; font-size: 0.6875rem; font-weight: 600; background: oklch(0.52 0.14 240 / 0.08); color: oklch(0.42 0.14 240); white-space: nowrap">{sectionEntries.length} รายการ</span>
+					</div>
+
+					<!-- Document/committee list -->
+					<div style="padding: 12px 20px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px">
+						{#each sectionEntries as [sKey, sLabel]}
+							{@const si = sectionIcons[sKey] ?? { icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', color: 'oklch(0.5 0.02 180)' }}
+							<div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: oklch(0.97 0.003 180)">
+								<svg viewBox="0 0 24 24" fill="none" stroke={si.color} stroke-width="1.75" style="width: 15px; height: 15px; flex-shrink: 0"><path stroke-linecap="round" stroke-linejoin="round" d={si.icon} /></svg>
+								<span style="font-size: 0.75rem; font-weight: 500; color: oklch(0.3 0.02 180)">{sLabel}</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/each}
+		</div>
+	</section>
+
+	<!-- Legacy workflow steps (toggle) -->
+	<div style="margin-bottom: 16px">
+		<button onclick={() => (showLegacySteps = !showLegacySteps)}
+			style="display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1px solid oklch(0.88 0.01 180); border-radius: 8px; background: white; font-size: 0.75rem; font-weight: 500; color: oklch(0.5 0.02 180); cursor: pointer; font-family: 'Noto Sans Thai', sans-serif">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; transform: rotate({showLegacySteps ? '180' : '0'}deg); transition: transform 0.2s ease"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+			{showLegacySteps ? 'ซ่อน' : 'แสดง'}ขั้นตอนแบบเดิม (Legacy)
+		</button>
+	</div>
+
+	{#if showLegacySteps}
 	<!-- Central Workflows Section -->
 	<section class="wf-section">
 		<div class="section-header">
@@ -443,6 +520,7 @@
 				{/each}
 			</div>
 		</section>
+	{/if}
 	{/if}
 </div>
 

@@ -28,32 +28,73 @@ import {
 import { assignAndNotify, completeAssignment } from '$lib/server/step-assignments';
 import { createNotification } from '$lib/server/notifications';
 
+async function resolveDocId(slug: string): Promise<number> {
+	const [row] = await db.select({ id: documents.id }).from(documents).where(eq(documents.slug, slug)).limit(1);
+	if (!row) throw new Error('ไม่พบเอกสาร');
+	return row.id;
+}
+
 export const load: PageServerLoad = async ({ params, parent }) => {
 	const { user } = await parent();
-	const docId = Number(params.id);
+	const docSlug = params.slug;
 
 	const [doc] = await db
 		.select({
 			id: documents.id,
+			slug: documents.slug,
 			agency_id: documents.agency_id,
 			workflow_id: documents.workflow_id,
 			plan_id: documents.plan_id,
 			current_step_id: documents.current_step_id,
 			payload: documents.payload,
 			status: documents.status,
-			updated_by: documents.updated_by
+			updated_by: documents.updated_by,
+			doc_type: documents.doc_type,
+			procurement_method: documents.procurement_method,
+			phase: documents.phase
 		})
 		.from(documents)
-		.where(eq(documents.id, docId));
+		.where(eq(documents.slug, docSlug));
 
 	if (!doc) throw error(404, 'ไม่พบเอกสาร');
+	const docId = doc.id;
 
-	const [workflow] = await db.select().from(workflows).where(eq(workflows.id, doc.workflow_id));
-	const steps = await db
-		.select()
-		.from(workflowSteps)
-		.where(eq(workflowSteps.workflow_id, doc.workflow_id))
-		.orderBy(workflowSteps.step_sequence);
+	// Check if this is a v2 document (has doc_type) or legacy
+	const isV2 = !!doc.doc_type && doc.phase !== 'LEGACY';
+
+	// For v2 documents, load approval steps and payment rounds
+	let approvalSteps: any[] = [];
+	let docPaymentRounds: any[] = [];
+	let docProjectItems: any[] = [];
+	if (isV2) {
+		const { documentApprovalSteps, paymentRounds: paymentRoundsTable, projectItems } = await import('$lib/server/db/schema');
+		approvalSteps = await db
+			.select()
+			.from(documentApprovalSteps)
+			.where(eq(documentApprovalSteps.document_id, docId));
+		docPaymentRounds = await db
+			.select()
+			.from(paymentRoundsTable)
+			.where(eq(paymentRoundsTable.document_id, docId));
+		if (doc.doc_type === 'type5_project') {
+			docProjectItems = await db
+				.select()
+				.from(projectItems)
+				.where(eq(projectItems.document_id, docId));
+		}
+	}
+
+	// Legacy workflow data (only if workflow_id exists)
+	let workflow = null;
+	let steps: any[] = [];
+	if (doc.workflow_id) {
+		[workflow] = await db.select().from(workflows).where(eq(workflows.id, doc.workflow_id));
+		steps = await db
+			.select()
+			.from(workflowSteps)
+			.where(eq(workflowSteps.workflow_id, doc.workflow_id))
+			.orderBy(workflowSteps.step_sequence);
+	}
 
 	const [plan] = await db.select().from(plans).where(eq(plans.id, doc.plan_id));
 
@@ -156,14 +197,19 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		users: userList,
 		bankAccounts: accounts,
 		canActOnStep,
-		dikaVoucher: dikaVoucher || null
+		dikaVoucher: dikaVoucher || null,
+		// v2 data
+		isV2,
+		approvalSteps,
+		paymentRounds: docPaymentRounds,
+		projectItems: docProjectItems
 	};
 };
 
 export const actions: Actions = {
 	advanceStep: async ({ request, params, locals, getClientAddress }) => {
 		const form = await request.formData();
-		const docId = Number(params.id);
+		const docId = await resolveDocId(params.slug);
 		const stepData = form.get('step_data') as string | null;
 
 		let parsedData: Record<string, unknown> = {};
@@ -312,7 +358,7 @@ export const actions: Actions = {
 		}
 
 		try {
-			const docId = Number(params.id);
+			const docId = await resolveDocId(params.slug);
 			await db.insert(documentCommittees).values({
 				document_id: docId,
 				user_id: parsed.data.user_id,
@@ -348,7 +394,7 @@ export const actions: Actions = {
 		}
 
 		try {
-			const docId = Number(params.id);
+			const docId = await resolveDocId(params.slug);
 			await db.insert(documentBidders).values({
 				document_id: docId,
 				vendor_id: parsed.data.vendor_id,
@@ -389,7 +435,7 @@ export const actions: Actions = {
 		}
 
 		try {
-			const docId = Number(params.id);
+			const docId = await resolveDocId(params.slug);
 			const { step_id, action, comment } = parsed.data;
 
 			// Prevent double-approve: check if this user already approved this step
@@ -526,7 +572,7 @@ export const actions: Actions = {
 		}
 
 		try {
-			const docId = Number(params.id);
+			const docId = await resolveDocId(params.slug);
 			const { gross_amount, fine_amount, tax_amount, payment_bank_account_id, tax_pool_account_id } = parsed.data;
 
 			const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
@@ -646,6 +692,255 @@ export const actions: Actions = {
 		} catch (err) {
 			console.error('Generate dika error:', err);
 			return fail(500, { success: false, errors: { gross_amount: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });
+		}
+	},
+
+	// ── v2 Approval Flow Actions ──
+
+	approveStep: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const docId = await resolveDocId(params.slug);
+		const stepId = Number(form.get('step_id'));
+		const action = form.get('action') as 'APPROVED' | 'REJECTED';
+		const comment = form.get('comment') as string | null;
+
+		if (!stepId || !action || !['APPROVED', 'REJECTED'].includes(action)) {
+			return fail(400, { success: false, errors: { step: ['ข้อมูลไม่ถูกต้อง'] } });
+		}
+
+		try {
+			const { advanceApprovalStep } = await import('$lib/server/approval-flow');
+			const result = await advanceApprovalStep(docId, stepId, locals.user.sub, action, comment ?? undefined);
+
+			if (result === 'EXECUTION') {
+				// Document approved — create first payment round
+				const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+				if (doc?.doc_type) {
+					const { createFirstPaymentRound } = await import('$lib/server/payment-rounds');
+					await createFirstPaymentRound(docId, doc.doc_type);
+				}
+				return { success: true, message: 'อนุมัติเอกสารสำเร็จ — เข้าสู่ขั้นตอนดำเนินการ' };
+			}
+
+			if (result === 'REJECTED') {
+				return { success: true, message: 'ปฏิเสธเอกสารแล้ว' };
+			}
+
+			return { success: true, message: action === 'APPROVED' ? 'อนุมัติสำเร็จ — ส่งต่อขั้นตอนถัดไป' : 'ปฏิเสธเอกสารแล้ว' };
+		} catch (err: any) {
+			console.error('Approve step error:', err);
+			return fail(400, { success: false, errors: { step: [err.message || 'เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	uploadBillFile: async ({ request, params }) => {
+		const form = await request.formData();
+		const file = form.get('file') as File | null;
+		const sectionKey = form.get('section_key') as string;
+		const fieldKey = form.get('field_key') as string;
+
+		if (!file || file.size === 0) {
+			return fail(400, { success: false, errors: { file: ['กรุณาเลือกไฟล์'] } });
+		}
+		if (file.size > 20 * 1024 * 1024) {
+			return fail(400, { success: false, errors: { file: ['ไฟล์ต้องไม่เกิน 20MB'] } });
+		}
+
+		try {
+			const { uploadFile: doUpload, generateUploadPath } = await import('$lib/server/upload');
+			const docSlug = params.slug;
+			const path = generateUploadPath(docSlug, sectionKey, fieldKey, file.name);
+			const url = await doUpload(file, path);
+			return { success: true, url, filename: file.name };
+		} catch (err: any) {
+			console.error('Upload error:', err);
+			return fail(500, { success: false, errors: { file: [err.message || 'อัปโหลดล้มเหลว'] } });
+		}
+	},
+
+	saveBillDraft: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const roundId = Number(form.get('round_id'));
+		const billPayloadRaw = form.get('bill_payload') as string;
+
+		if (!roundId) return fail(400, { success: false, errors: { round: ['ไม่พบรอบการจ่ายเงิน'] } });
+
+		try {
+			const { paymentRounds: pr } = await import('$lib/server/db/schema');
+			let payload = {};
+			try { payload = JSON.parse(billPayloadRaw); } catch {}
+
+			await db
+				.update(pr)
+				.set({ bill_payload: payload })
+				.where(eq(pr.id, roundId));
+
+			return { success: true, message: 'บันทึกร่างเอกสารสำเร็จ' };
+		} catch (err) {
+			return fail(500, { success: false, errors: { round: ['เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	submitBill: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const docId = await resolveDocId(params.slug);
+		const roundId = Number(form.get('round_id'));
+		const billPayloadRaw = form.get('bill_payload') as string;
+
+		if (!roundId) return fail(400, { success: false, errors: { round: ['ไม่พบรอบการจ่ายเงิน'] } });
+
+		try {
+			const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+			if (!doc?.doc_type) return fail(400, { success: false, errors: { round: ['เอกสารไม่ถูกต้อง'] } });
+
+			let payload = {};
+			try { payload = JSON.parse(billPayloadRaw); } catch {}
+
+			const { advancePaymentRound } = await import('$lib/server/payment-rounds');
+
+			// Advance from BILL_PENDING → BILL_CREATED
+			await advancePaymentRound(roundId, doc.doc_type, {
+				bill_payload: payload,
+				bill_created_by: locals.user.sub
+			});
+
+			// Advance from BILL_CREATED → SENT_TO_FINANCE
+			await advancePaymentRound(roundId, doc.doc_type);
+
+			// Notify finance
+			const { agencySettings } = await import('$lib/server/db/schema');
+			const [settings] = await db.select().from(agencySettings).where(eq(agencySettings.agency_id, doc.agency_id));
+			if (settings?.finance_unit_id) {
+				const { orgUnits } = await import('$lib/server/db/schema');
+				const [financeUnit] = await db.select().from(orgUnits).where(eq(orgUnits.id, settings.finance_unit_id));
+				if (financeUnit?.head_of_unit_id) {
+					const { notifications } = await import('$lib/server/db/schema');
+					await db.insert(notifications).values({
+						user_id: financeUnit.head_of_unit_id,
+						document_id: docId,
+						title: 'เอกสารจัดซื้อจัดจ้างรอเบิกจ่าย',
+						message: `เอกสาร #${docId} ส่งมาจากฝ่ายจัดซื้อจัดจ้างแล้ว`,
+						action_url: '/finance',
+						notification_type: 'APPROVAL_REQUIRED'
+					});
+				}
+			}
+
+			return { success: true, message: 'ส่งเอกสารไปฝ่ายการเงินสำเร็จ' };
+		} catch (err: any) {
+			return fail(400, { success: false, errors: { round: [err.message || 'เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	advanceRound: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const docId = await resolveDocId(params.slug);
+		const roundId = Number(form.get('round_id'));
+		const billPayloadRaw = form.get('bill_payload') as string | null;
+
+		if (!roundId) {
+			return fail(400, { success: false, errors: { round: ['ไม่พบรอบการจ่ายเงิน'] } });
+		}
+
+		try {
+			const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+			if (!doc?.doc_type) {
+				return fail(400, { success: false, errors: { round: ['เอกสารไม่ถูกต้อง'] } });
+			}
+
+			const { advancePaymentRound } = await import('$lib/server/payment-rounds');
+
+			const additionalData: any = {};
+			if (billPayloadRaw) {
+				try { additionalData.bill_payload = JSON.parse(billPayloadRaw); } catch {}
+				additionalData.bill_created_by = locals.user.sub;
+			}
+			if (form.get('check_no')) additionalData.check_no = form.get('check_no');
+			if (form.get('check_date')) additionalData.check_date = form.get('check_date');
+			if (form.get('finance_seen_by')) additionalData.finance_seen_by = locals.user.sub;
+			if (form.get('paid_by')) additionalData.paid_by = locals.user.sub;
+			if (form.get('stamped_by')) additionalData.stamped_by = locals.user.sub;
+			if (form.get('dika_voucher_id')) additionalData.dika_voucher_id = Number(form.get('dika_voucher_id'));
+
+			const newStatus = await advancePaymentRound(roundId, doc.doc_type, additionalData);
+
+			return { success: true, message: `สถานะเปลี่ยนเป็น ${newStatus}` };
+		} catch (err: any) {
+			console.error('Advance round error:', err);
+			return fail(400, { success: false, errors: { round: [err.message || 'เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	createProjectItem: async ({ request, params }) => {
+		const form = await request.formData();
+		const docId = await resolveDocId(params.slug);
+		const item_name = form.get('item_name') as string;
+		const item_type = form.get('item_type') as string;
+		const estimated_amount = form.get('estimated_amount') as string;
+
+		if (!item_name || !item_type || !['pFinance', 'pParcel'].includes(item_type)) {
+			return fail(400, { success: false, errors: { item: ['กรุณาระบุข้อมูลให้ครบ'] } });
+		}
+
+		try {
+			const { projectItems } = await import('$lib/server/db/schema');
+			await db.insert(projectItems).values({
+				document_id: docId,
+				item_name,
+				item_type,
+				estimated_amount: estimated_amount || '0',
+				status: 'PENDING'
+			});
+			return { success: true, message: 'เพิ่มรายการโครงการสำเร็จ' };
+		} catch (err) {
+			console.error('Create project item error:', err);
+			return fail(500, { success: false, errors: { item: ['เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	closeProject: async ({ params, locals }) => {
+		const docId = await resolveDocId(params.slug);
+		try {
+			const { projectItems } = await import('$lib/server/db/schema');
+			const items = await db.select().from(projectItems).where(eq(projectItems.document_id, docId));
+
+			const allDone = items.every((i: any) => i.status === 'COMPLETED');
+			if (!allDone) {
+				return fail(400, { success: false, errors: { project: ['ต้องดำเนินการรายการทั้งหมดให้เสร็จก่อนปิดโครงการ'] } });
+			}
+
+			await db
+				.update(documents)
+				.set({ phase: 'COMPLETED', status: 'PAID' })
+				.where(eq(documents.id, docId));
+
+			return { success: true, message: 'ปิดโครงการสำเร็จ' };
+		} catch (err) {
+			console.error('Close project error:', err);
+			return fail(400, { success: false, errors: { project: ['เกิดข้อผิดพลาด'] } });
+		}
+	},
+
+	createNextRound: async ({ params, locals }) => {
+		const docId = await resolveDocId(params.slug);
+
+		try {
+			const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+			if (!doc?.doc_type) {
+				return fail(400, { success: false, errors: { round: ['เอกสารไม่ถูกต้อง'] } });
+			}
+
+			const { createNextPaymentRound, isMultiRoundType } = await import('$lib/server/payment-rounds');
+
+			if (!isMultiRoundType(doc.doc_type)) {
+				return fail(400, { success: false, errors: { round: ['ประเภทเอกสารนี้ไม่รองรับการจ่ายหลายรอบ'] } });
+			}
+
+			const round = await createNextPaymentRound(docId, doc.doc_type);
+			return { success: true, message: `สร้างรอบที่ ${round.round_number} สำเร็จ` };
+		} catch (err: any) {
+			console.error('Create next round error:', err);
+			return fail(400, { success: false, errors: { round: [err.message || 'เกิดข้อผิดพลาด'] } });
 		}
 	}
 };

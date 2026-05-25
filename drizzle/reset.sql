@@ -13,6 +13,10 @@ DROP FUNCTION IF EXISTS handle_bank_transaction();
 DROP FUNCTION IF EXISTS rollup_plan_budget();
 
 -- Drop tables in reverse FK dependency order
+DROP TABLE IF EXISTS project_items CASCADE;
+DROP TABLE IF EXISTS payment_rounds CASCADE;
+DROP TABLE IF EXISTS document_approval_steps CASCADE;
+DROP TABLE IF EXISTS agency_settings CASCADE;
 DROP TABLE IF EXISTS tax_transactions CASCADE;
 DROP TABLE IF EXISTS bank_transactions CASCADE;
 DROP TABLE IF EXISTS dika_vouchers CASCADE;

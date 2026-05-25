@@ -11,7 +11,13 @@
 	watchFormResult(() => formResult);
 	let showCreateModal = $state(false);
 	let showImportModal = $state(false);
+	let showSettingsPanel = $state(false);
 	let createParentId = $state<number | null>(null);
+
+	// Agency settings for current agency
+	let currentAgencySettings = $derived(
+		data.agencySettings?.find((s: any) => s.agency_id === data.agencyFilter) ?? null
+	);
 
 	function handleExportCsv() {
 		exportToCsv('org-structure', [
@@ -203,6 +209,81 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Agency Settings: Assign Planning/Procurement/Finance Units -->
+	{#if canManage && data.agencyFilter}
+		<div class="mb-4">
+			<button
+				onclick={() => (showSettingsPanel = !showSettingsPanel)}
+				class="flex w-full items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors"
+				style="background: var(--color-brand-50); color: var(--color-brand-700); border: 1px solid var(--color-brand-100)"
+			>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+					<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+				</svg>
+				ตั้งค่าแผนกหลัก (แผนงาน / พัสดุ / การเงิน)
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-left: auto; transform: rotate({showSettingsPanel ? '180' : '0'}deg); transition: transform 0.2s">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+				</svg>
+			</button>
+
+			{#if showSettingsPanel}
+				<form
+					method="POST"
+					action="?/saveAgencySettings"
+					use:enhance={() => {
+						return async ({ update, result }) => {
+							if (result.type === 'success') showSettingsPanel = false;
+							await update();
+						};
+					}}
+					class="mt-2 rounded-lg p-4"
+					style="background: white; border: 1px solid var(--color-slate-200)"
+				>
+					<input type="hidden" name="agency_id" value={data.agencyFilter} />
+					<p class="mb-3 text-xs" style="color: var(--color-slate-500)">
+						กำหนดว่าแผนกไหนทำหน้าที่เป็นแผนกแผนงาน, แผนกพัสดุ, และแผนกการเงิน เพื่อใช้ใน flow การอนุมัติเอกสารจัดซื้อจัดจ้าง
+					</p>
+					<div class="grid grid-cols-3 gap-3">
+						<div>
+							<label for="settings-planning" class="mb-1 block text-[0.8125rem] font-medium" style="color: var(--color-slate-700)">แผนกแผนงาน</label>
+							<CustomSelect
+								name="planning_unit_id"
+								value={currentAgencySettings?.planning_unit_id ? String(currentAgencySettings.planning_unit_id) : ''}
+								options={data.units.filter((u: any) => u.agency_id === data.agencyFilter).map((u: any) => ({ value: String(u.id), label: u.name }))}
+								placeholder="-- เลือก --"
+								id="settings-planning"
+							/>
+						</div>
+						<div>
+							<label for="settings-procurement" class="mb-1 block text-[0.8125rem] font-medium" style="color: var(--color-slate-700)">แผนกพัสดุ</label>
+							<CustomSelect
+								name="procurement_unit_id"
+								value={currentAgencySettings?.procurement_unit_id ? String(currentAgencySettings.procurement_unit_id) : ''}
+								options={data.units.filter((u: any) => u.agency_id === data.agencyFilter).map((u: any) => ({ value: String(u.id), label: u.name }))}
+								placeholder="-- เลือก --"
+								id="settings-procurement"
+							/>
+						</div>
+						<div>
+							<label for="settings-finance" class="mb-1 block text-[0.8125rem] font-medium" style="color: var(--color-slate-700)">แผนกการเงิน</label>
+							<CustomSelect
+								name="finance_unit_id"
+								value={currentAgencySettings?.finance_unit_id ? String(currentAgencySettings.finance_unit_id) : ''}
+								options={data.units.filter((u: any) => u.agency_id === data.agencyFilter).map((u: any) => ({ value: String(u.id), label: u.name }))}
+								placeholder="-- เลือก --"
+								id="settings-finance"
+							/>
+						</div>
+					</div>
+					<div class="mt-3 flex justify-end">
+						<button type="submit" class="btn-primary" style="font-size: 0.8125rem">บันทึกการตั้งค่า</button>
+					</div>
+				</form>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Tree View -->
 	<div class="tree-container">
