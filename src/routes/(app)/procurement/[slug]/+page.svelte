@@ -195,6 +195,7 @@
 				{#if round.status === 'BILL_PENDING' && data.document.procurement_method}
 					<ConsolidatedBillForm
 						procurementMethod={data.document.procurement_method}
+						documentSlug={data.document.slug}
 						billPayload={round.bill_payload ?? {}}
 						users={data.users}
 						vendors={data.vendors}
