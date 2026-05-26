@@ -3,6 +3,7 @@
 	import CommitteeSelector from './CommitteeSelector.svelte';
 	import VendorQuotationList from './VendorQuotationList.svelte';
 	import { BILL_SECTION_DEFS, type BillSectionDef } from '$lib/types/procurement';
+	import { deserialize } from '$app/forms';
 
 	let {
 		procurementMethod,
@@ -70,31 +71,35 @@
 			formData.set('section_key', sectionKey);
 			formData.set('field_key', fieldKey);
 			const res = await fetch('?/uploadBillFile', { method: 'POST', body: formData });
-			const result = await res.json();
+			const result = deserialize(await res.text());
 
-			if (result.type === 'success' || result.data?.url) {
-				const url = result.data?.url ?? result.url;
-				const filename = result.data?.filename ?? file.name;
-				updateField(sectionKey, fieldKey, url);
-				updateField(sectionKey, `${fieldKey}_name`, filename);
+			if (result.type === 'success' && result.data) {
+				const d = result.data as Record<string, any>;
+				updateField(sectionKey, fieldKey, d.url);
+				updateField(sectionKey, `${fieldKey}_name`, d.filename ?? file.name);
+			} else if (result.type === 'failure') {
+				console.error('Upload failed:', (result.data as any)?.errors);
 			}
 		} catch (err) {
 			console.error('Upload failed:', err);
 		} finally {
 			uploading = { ...uploading, [uploadKey]: false };
+			input.value = '';
 		}
 	}
 
 	let completedCount = $derived(sectionEntries.filter(([k]) => getSectionStatus(k) === 'complete').length);
 	let allComplete = $derived(completedCount === sectionEntries.length);
 
+	function removeFile(sectionKey: string, fieldKey: string) {
+		updateField(sectionKey, fieldKey, null);
+		updateField(sectionKey, `${fieldKey}_name`, null);
+	}
+
 	// Styles
 	const labelStyle = "display: block; margin-bottom: 4px; font-size: 0.75rem; font-weight: 600; color: oklch(0.4 0.02 180)";
 	const descStyle = "margin: 0 0 8px; font-size: 0.6875rem; color: oklch(0.55 0.02 180)";
 	const inputStyle = "width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid oklch(0.88 0.01 180); font-size: 0.8125rem; outline: none; font-family: 'Noto Sans Thai', sans-serif";
-	const fileWrapStyle = "display: flex; align-items: center; gap: 8px";
-	const fileBtnStyle = "padding: 7px 14px; border-radius: 8px; border: 1px solid oklch(0.52 0.14 240 / 0.3); background: oklch(0.52 0.14 240 / 0.04); color: oklch(0.42 0.14 240); font-size: 0.75rem; font-weight: 500; cursor: pointer; font-family: 'Noto Sans Thai', sans-serif; white-space: nowrap";
-	const fileNameStyle = "font-size: 0.6875rem; color: oklch(0.38 0.14 150); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px";
 	const legalRefStyle = "font-size: 0.5625rem; color: oklch(0.6 0.04 240); font-style: italic";
 </script>
 
@@ -136,25 +141,53 @@
 								{#if field.required}<span style="color: oklch(0.58 0.2 25)">*</span>{/if}
 							</label>
 							{#if field.description}<p style={descStyle}>{field.description}</p>{/if}
-							<div style={fileWrapStyle}>
-								<label style={fileBtnStyle}>
+
+							{#if data[sectionKey]?.[field.key]}
+								<!-- File preview card -->
+								<div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: oklch(0.54 0.16 150 / 0.04); border: 1px solid oklch(0.54 0.16 150 / 0.15)">
+									<div style="flex-shrink: 0; width: 36px; height: 36px; border-radius: 8px; background: oklch(0.58 0.2 25 / 0.08); display: flex; align-items: center; justify-content: center">
+										<svg viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0.18 25)" stroke-width="1.5" style="width: 20px; height: 20px"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+									</div>
+									<div style="flex: 1; min-width: 0">
+										<p style="margin: 0; font-size: 0.8125rem; font-weight: 500; color: oklch(0.3 0.02 180); overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
+											{data[sectionKey]?.[`${field.key}_name`] ?? 'เอกสาร PDF'}
+										</p>
+										<p style="margin: 2px 0 0; font-size: 0.6875rem; color: oklch(0.54 0.16 150)">อัปโหลดแล้ว</p>
+									</div>
+									<div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0">
+										<a href={data[sectionKey][field.key]} target="_blank" rel="noopener"
+											style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: oklch(0.52 0.14 240 / 0.06); color: oklch(0.42 0.14 240); transition: background 0.15s ease"
+											title="ดูไฟล์">
+											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 16px; height: 16px"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+										</a>
+										{#if !readonly}
+											<button type="button"
+												onclick={() => removeFile(sectionKey, field.key)}
+												style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; border: none; background: oklch(0.58 0.2 25 / 0.06); color: oklch(0.52 0.2 25); cursor: pointer; transition: background 0.15s ease"
+												title="ลบไฟล์">
+												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 16px; height: 16px"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+											</button>
+										{/if}
+									</div>
+								</div>
+							{:else}
+								<!-- Upload dropzone -->
+								<label style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 16px; border-radius: 10px; border: 1.5px dashed oklch(0.82 0.04 240); background: oklch(0.98 0.005 240); cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease"
+									onmouseenter={(e) => { e.currentTarget.style.borderColor = 'oklch(0.62 0.12 240)'; e.currentTarget.style.background = 'oklch(0.96 0.01 240)'; }}
+									onmouseleave={(e) => { e.currentTarget.style.borderColor = 'oklch(0.82 0.04 240)'; e.currentTarget.style.background = 'oklch(0.98 0.005 240)'; }}>
 									{#if uploading[`${sectionKey}_${field.key}`]}
-										กำลังอัปโหลด...
+										<div style="width: 20px; height: 20px; border: 2px solid oklch(0.52 0.14 240 / 0.2); border-top-color: oklch(0.52 0.14 240); border-radius: 50%; animation: spin 0.6s linear infinite"></div>
+										<span style="font-size: 0.75rem; color: oklch(0.5 0.08 240); font-weight: 500">กำลังอัปโหลด...</span>
 									{:else}
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; display: inline; vertical-align: -2px; margin-right: 4px"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-										เลือกไฟล์ PDF
+										<svg viewBox="0 0 24 24" fill="none" stroke="oklch(0.6 0.08 240)" stroke-width="1.5" style="width: 24px; height: 24px"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+										<span style="font-size: 0.75rem; color: oklch(0.45 0.08 240); font-weight: 500">คลิกเพื่อเลือกไฟล์ PDF</span>
+										<span style="font-size: 0.625rem; color: oklch(0.6 0.03 240)">ขนาดไม่เกิน 5 MB</span>
 									{/if}
 									<input type="file" accept=".pdf" style="display: none"
 										onchange={(e) => handleFileUpload(sectionKey, field.key, e)}
 										disabled={readonly || uploading[`${sectionKey}_${field.key}`]} />
 								</label>
-								{#if data[sectionKey]?.[field.key]}
-									<span style={fileNameStyle}>
-										{data[sectionKey]?.[`${field.key}_name`] ?? 'อัปโหลดแล้ว'}
-									</span>
-									<a href={data[sectionKey][field.key]} target="_blank" style="font-size: 0.625rem; color: oklch(0.42 0.14 240)">ดู</a>
-								{/if}
-							</div>
+							{/if}
 						</div>
 
 					<!-- Committee selector -->
@@ -258,3 +291,9 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+</style>

@@ -18,7 +18,9 @@
 		PAID: { bg: 'oklch(0.93 0.04 150 / 0.8)', text: 'oklch(0.46 0.14 150)', dot: 'oklch(0.54 0.16 150)' },
 		PENDING: { bg: 'oklch(0.95 0.04 85 / 0.8)', text: 'oklch(0.68 0.12 75)', dot: 'oklch(0.75 0.12 85)' },
 		PENDING_EXAMINE: { bg: 'oklch(0.95 0.04 85 / 0.8)', text: 'oklch(0.68 0.12 75)', dot: 'oklch(0.75 0.12 85)' },
-		SUBMITTED: { bg: 'oklch(0.93 0.04 150 / 0.8)', text: 'oklch(0.46 0.14 150)', dot: 'oklch(0.54 0.16 150)' }
+		SUBMITTED: { bg: 'oklch(0.93 0.04 150 / 0.8)', text: 'oklch(0.46 0.14 150)', dot: 'oklch(0.54 0.16 150)' },
+		OVERDUE: { bg: 'oklch(0.93 0.06 25 / 0.8)', text: 'oklch(0.50 0.20 25)', dot: 'oklch(0.58 0.22 25)' },
+		REPAID: { bg: 'oklch(0.93 0.04 150 / 0.8)', text: 'oklch(0.46 0.14 150)', dot: 'oklch(0.54 0.16 150)' }
 	};
 
 	const DEFAULT_STYLE = { bg: 'oklch(0.94 0.008 180 / 0.8)', text: 'oklch(0.58 0.030 180)', dot: 'oklch(0.70 0.025 180)' };
@@ -37,7 +39,9 @@
 		PAID: 'จ่ายแล้ว',
 		PENDING: 'รอดำเนินการ',
 		PENDING_EXAMINE: 'รอตรวจสอบ',
-		SUBMITTED: 'ส่งแล้ว'
+		SUBMITTED: 'ส่งแล้ว',
+		OVERDUE: 'เกินกำหนด',
+		REPAID: 'ชำระคืนแล้ว'
 	};
 </script>
 

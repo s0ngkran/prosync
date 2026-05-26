@@ -22,7 +22,7 @@
 	let cfg = $derived(statusConfig[status]);
 </script>
 
-<div style="border: 1px solid oklch(0.92 0.005 180); border-radius: 12px; overflow: hidden; margin-bottom: 8px; background: white">
+<div style="border: 1px solid oklch(0.92 0.005 180); border-radius: 12px; margin-bottom: 8px; background: white">
 	<button
 		type="button"
 		onclick={() => (expanded = !expanded)}

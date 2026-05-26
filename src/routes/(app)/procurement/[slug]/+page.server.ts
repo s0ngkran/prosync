@@ -589,7 +589,13 @@ export const actions: Actions = {
 
 			const net = Number(gross_amount) - Number(fine_amount) - Number(tax_amount);
 
-			await db.insert(dikaVouchers).values({
+			// Prevent duplicate dika
+			const existingDika = await db.select({ id: dikaVouchers.id }).from(dikaVouchers).where(eq(dikaVouchers.document_id, docId));
+			if (existingDika.length > 0) {
+				return fail(400, { success: false, errors: { gross_amount: ['ฎีกาสำหรับเอกสารนี้ถูกสร้างไปแล้ว'] } });
+			}
+
+			const [newDika] = await db.insert(dikaVouchers).values({
 				agency_id: doc.agency_id,
 				document_id: docId,
 				vendor_id: winner.vendor_id,
@@ -601,7 +607,18 @@ export const actions: Actions = {
 				tax_amount,
 				net_amount: net.toFixed(2),
 				status: 'PENDING_EXAMINE'
-			});
+			}).returning();
+
+			// Advance payment round: FINANCE_SEEN → DIKA_CREATED
+			if (doc.doc_type) {
+				const { paymentRounds: prTable } = await import('$lib/server/db/schema');
+				const [currentRound] = await db.select().from(prTable)
+					.where(and(eq(prTable.document_id, docId), eq(prTable.status, 'FINANCE_SEEN')));
+				if (currentRound) {
+					const { advancePaymentRound } = await import('$lib/server/payment-rounds');
+					await advancePaymentRound(currentRound.id, doc.doc_type, { dika_voucher_id: newDika?.id });
+				}
+			}
 
 			// Write audit log
 			if (locals.user) {
@@ -742,8 +759,8 @@ export const actions: Actions = {
 		if (!file || file.size === 0) {
 			return fail(400, { success: false, errors: { file: ['กรุณาเลือกไฟล์'] } });
 		}
-		if (file.size > 20 * 1024 * 1024) {
-			return fail(400, { success: false, errors: { file: ['ไฟล์ต้องไม่เกิน 20MB'] } });
+		if (file.size > 5 * 1024 * 1024) {
+			return fail(400, { success: false, errors: { file: ['ไฟล์ต้องไม่เกิน 5MB'] } });
 		}
 
 		try {

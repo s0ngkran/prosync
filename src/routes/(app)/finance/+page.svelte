@@ -404,7 +404,7 @@
 							<td class="px-4 py-3 text-right font-mono">{formatNumber(loan.amount)}</td>
 							<td class="px-4 py-3 text-right font-mono">{formatNumber(loan.repaid_amount)}</td>
 							<td class="px-4 py-3">{loan.due_date || '-'}</td>
-							<td class="px-4 py-3"><StatusBadge status={loan.status} /></td>
+							<td class="px-4 py-3"><StatusBadge status={loan.displayStatus ?? loan.status} /></td>
 							<td class="px-4 py-3">
 								{#if loan.status === 'PENDING' && canManageFinance}
 									<div class="flex gap-1">
@@ -418,10 +418,11 @@
 										</form>
 									</div>
 								{:else if loan.status === 'APPROVED' && canManageFinance}
+									{@const remaining = Number(loan.amount) - Number(loan.repaid_amount)}
 									<form method="POST" action="?/repayLoan" use:enhance={() => { return async ({ update }) => { await update(); }; }} class="flex items-center gap-1">
 										<input type="hidden" name="loan_id" value={loan.id} />
-										<input type="number" name="repay_amount" required min="1" step="0.01"
-											placeholder="จำนวน" class="w-24 rounded border px-2 py-1 text-xs" />
+										<input type="number" name="repay_amount" required min="1" max={remaining} step="0.01"
+											placeholder="เหลือ {formatNumber(remaining)}" class="w-32 rounded border px-2 py-1 text-xs" />
 										<button type="submit" class="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">ชำระ</button>
 									</form>
 								{/if}

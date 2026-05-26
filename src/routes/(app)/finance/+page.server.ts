@@ -148,10 +148,17 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 			.innerJoin(plans, eq(dikaVouchers.plan_id, plans.id))
 			.where(eq(taxTransactions.agency_id, agencyId));
 
-		loanList = await db
+		const rawLoans = await db
 			.select()
 			.from(loans)
 			.where(or(eq(loans.borrower_agency_id, agencyId), eq(loans.lender_agency_id, agencyId)));
+
+		// Enrich loans with overdue detection (computed at read time, no cron needed)
+		const { computeLoanOverdueStatus } = await import('$lib/server/loans');
+		loanList = rawLoans.map(loan => ({
+			...loan,
+			displayStatus: computeLoanOverdueStatus(loan.status, loan.due_date)
+		}));
 	}
 
 	// Load bank list + account types for account creation
@@ -550,12 +557,12 @@ export const actions: Actions = {
 		}
 	},
 
-	createLoan: async ({ request, locals }) => {
+	createLoan: async ({ request, locals, getClientAddress }) => {
 		const parsed = parseFormData(createLoanSchema, await request.formData());
 		if (!parsed.success) return fail(400, { success: false, errors: parsed.errors });
 		try {
 			const { amount, purpose, due_date, loan_type, borrower_agency_id, lender_agency_id, source_bank_account_id } = parsed.data;
-			await db.insert(loans).values({
+			const [newLoan] = await db.insert(loans).values({
 				borrower_agency_id,
 				loan_type,
 				lender_agency_id: lender_agency_id ?? null,
@@ -563,8 +570,61 @@ export const actions: Actions = {
 				amount: String(amount),
 				purpose,
 				due_date: due_date || null,
-				requested_by_user_id: (locals as any).user?.id ?? null
+				requested_by_user_id: locals.user?.sub ?? null
+			}).returning();
+
+			// Audit log
+			const [agencyRow] = await db.select({ name: agencies.name }).from(agencies).where(eq(agencies.id, borrower_agency_id));
+			await writeAuditLog({
+				collection: 'bank_transaction_histories',
+				action_type: 'LOAN_CREATED',
+				agency_id: borrower_agency_id,
+				agency_name: agencyRow?.name || '',
+				loan_id: newLoan.id,
+				loan_type,
+				amount,
+				purpose,
+				action_by: {
+					user_id: locals.user!.sub,
+					name: locals.user!.name,
+					ip_address: getClientAddress()
+				}
 			});
+
+			// Notify finance head of borrower agency
+			try {
+				const { agencySettings } = await import('$lib/server/db/schema');
+				const [settings] = await db.select().from(agencySettings).where(eq(agencySettings.agency_id, borrower_agency_id));
+				if (settings?.finance_unit_id) {
+					const [financeUnit] = await db.select().from(orgUnits).where(eq(orgUnits.id, settings.finance_unit_id));
+					if (financeUnit?.head_of_unit_id && financeUnit.head_of_unit_id !== locals.user!.sub) {
+						await createNotification({
+							userId: financeUnit.head_of_unit_id,
+							title: 'คำขอยืมเงินใหม่',
+							message: `คำขอยืมเงิน ${loan_type === 'TAX_POOL' ? 'จากภาษี' : 'ข้ามหน่วยงาน'} จำนวน ${Number(amount).toLocaleString()} บาท — ${purpose}`,
+							actionUrl: '/finance',
+							notificationType: 'APPROVAL_REQUIRED'
+						});
+					}
+				}
+				// INTER_AGENCY: also notify lender agency's finance head
+				if (loan_type === 'INTER_AGENCY' && lender_agency_id) {
+					const [lenderSettings] = await db.select().from(agencySettings).where(eq(agencySettings.agency_id, lender_agency_id));
+					if (lenderSettings?.finance_unit_id) {
+						const [lenderFinUnit] = await db.select().from(orgUnits).where(eq(orgUnits.id, lenderSettings.finance_unit_id));
+						if (lenderFinUnit?.head_of_unit_id) {
+							await createNotification({
+								userId: lenderFinUnit.head_of_unit_id,
+								title: 'มีหน่วยงานขอยืมเงิน',
+								message: `${agencyRow?.name || 'หน่วยงาน'} ขอยืมเงิน ${Number(amount).toLocaleString()} บาท — ${purpose}`,
+								actionUrl: '/finance',
+								notificationType: 'APPROVAL_REQUIRED'
+							});
+						}
+					}
+				}
+			} catch { /* agencySettings may not exist */ }
+
 			return { success: true, message: 'สร้างคำขอยืมเงินสำเร็จ' };
 		} catch (err) {
 			console.error('Create loan error:', err);
@@ -572,16 +632,79 @@ export const actions: Actions = {
 		}
 	},
 
-	approveLoan: async ({ request, locals }) => {
+	approveLoan: async ({ request, locals, getClientAddress }) => {
 		const parsed = parseFormData(approveLoanSchema, await request.formData());
 		if (!parsed.success) return fail(400, { success: false, errors: parsed.errors });
 		try {
 			const { loan_id, action } = parsed.data;
-			await db.update(loans).set({
-				status: action === 'APPROVED' ? 'APPROVED' : 'REJECTED',
-				approved_by_user_id: (locals as any).user?.id ?? null,
-				approved_at: new Date()
-			}).where(eq(loans.id, loan_id));
+
+			// Fetch loan and validate current status
+			const [loan] = await db.select().from(loans).where(eq(loans.id, loan_id));
+			if (!loan) return fail(404, { success: false, errors: { loan_id: ['ไม่พบรายการยืม'] } });
+			if (loan.status !== 'PENDING') return fail(400, { success: false, errors: { loan_id: ['สถานะไม่ถูกต้อง — ต้องเป็น PENDING เท่านั้น'] } });
+
+			// Balance validation for TAX_POOL approval
+			if (action === 'APPROVED' && loan.loan_type === 'TAX_POOL') {
+				if (!loan.source_bank_account_id) {
+					return fail(400, { success: false, errors: { loan_id: ['รายการยืมจากภาษีต้องระบุบัญชีพักภาษี'] } });
+				}
+				const { validateLoanApproval } = await import('$lib/server/loans');
+				const [account] = await db.select({ balance: bankAccounts.balance }).from(bankAccounts).where(eq(bankAccounts.id, loan.source_bank_account_id));
+				const validation = validateLoanApproval('TAX_POOL', Number(loan.amount), account ? Number(account.balance) : null);
+				if (!validation.valid) {
+					return fail(400, { success: false, errors: { loan_id: [validation.reason!] } });
+				}
+			}
+
+			// Wrap in transaction for atomicity
+			await db.transaction(async (tx) => {
+				// Update loan status
+				await tx.update(loans).set({
+					status: action === 'APPROVED' ? 'APPROVED' : 'REJECTED',
+					approved_by_user_id: locals.user!.sub,
+					approved_at: new Date()
+				}).where(eq(loans.id, loan_id));
+
+				// TAX_POOL + APPROVED: create bank transaction (trigger auto-decreases balance)
+				if (action === 'APPROVED' && loan.loan_type === 'TAX_POOL' && loan.source_bank_account_id) {
+					await tx.insert(bankTransactions).values({
+						bank_account_id: loan.source_bank_account_id,
+						transaction_type: 'BORROW_TAX',
+						amount: loan.amount,
+						action_by_user_id: locals.user!.sub,
+						tags: { loan_id: loan.id, type: 'loan_disbursement' }
+					});
+				}
+			});
+
+			// Audit log
+			const [agencyRow] = await db.select({ name: agencies.name }).from(agencies).where(eq(agencies.id, loan.borrower_agency_id));
+			await writeAuditLog({
+				collection: 'bank_transaction_histories',
+				action_type: action === 'APPROVED' ? 'LOAN_APPROVED' : 'LOAN_REJECTED',
+				agency_id: loan.borrower_agency_id,
+				agency_name: agencyRow?.name || '',
+				loan_id: loan.id,
+				loan_type: loan.loan_type,
+				amount: loan.amount,
+				action_by: {
+					user_id: locals.user!.sub,
+					name: locals.user!.name,
+					ip_address: getClientAddress()
+				}
+			});
+
+			// Notify the requester
+			if (loan.requested_by_user_id) {
+				await createNotification({
+					userId: loan.requested_by_user_id,
+					title: action === 'APPROVED' ? 'คำขอยืมเงินได้รับอนุมัติ' : 'คำขอยืมเงินถูกปฏิเสธ',
+					message: `คำขอยืมเงิน ${Number(loan.amount).toLocaleString()} บาท — ${action === 'APPROVED' ? 'อนุมัติแล้ว' : 'ถูกปฏิเสธ'}`,
+					actionUrl: '/finance',
+					notificationType: action === 'APPROVED' ? 'APPROVAL_REQUIRED' : 'DOCUMENT_REJECTED'
+				});
+			}
+
 			return { success: true, message: action === 'APPROVED' ? 'อนุมัติการยืมเงินแล้ว' : 'ปฏิเสธการยืมเงินแล้ว' };
 		} catch (err) {
 			console.error('Approve loan error:', err);
@@ -589,21 +712,75 @@ export const actions: Actions = {
 		}
 	},
 
-	repayLoan: async ({ request }) => {
+	repayLoan: async ({ request, locals, getClientAddress }) => {
 		const parsed = parseFormData(repayLoanSchema, await request.formData());
 		if (!parsed.success) return fail(400, { success: false, errors: parsed.errors });
 		try {
 			const { loan_id, repay_amount } = parsed.data;
 			const [loan] = await db.select().from(loans).where(eq(loans.id, loan_id));
 			if (!loan) return fail(404, { success: false, errors: { loan_id: ['ไม่พบรายการยืม'] } });
-			const newRepaid = Number(loan.repaid_amount) + repay_amount;
-			const fullyRepaid = newRepaid >= Number(loan.amount);
-			await db.update(loans).set({
-				repaid_amount: String(newRepaid),
-				status: fullyRepaid ? 'REPAID' : loan.status,
-				repaid_at: fullyRepaid ? new Date() : null
-			}).where(eq(loans.id, loan_id));
-			return { success: true, message: fullyRepaid ? 'ชำระคืนครบแล้ว' : 'บันทึกการชำระคืนแล้ว' };
+			if (loan.status !== 'APPROVED') return fail(400, { success: false, errors: { loan_id: ['สถานะไม่ถูกต้อง — ต้องเป็น APPROVED เท่านั้น'] } });
+
+			// Calculate repayment with overpayment protection
+			const { calculateRepayment } = await import('$lib/server/loans');
+			const result = calculateRepayment(Number(loan.repaid_amount), Number(loan.amount), repay_amount);
+			if (result.overpayment) {
+				const remaining = Number(loan.amount) - Number(loan.repaid_amount);
+				return fail(400, { success: false, errors: { repay_amount: [`จำนวนเงินเกินยอดคงเหลือ (เหลือ ${remaining.toLocaleString()} บาท)`] } });
+			}
+
+			// Wrap in transaction for atomicity
+			await db.transaction(async (tx) => {
+				await tx.update(loans).set({
+					repaid_amount: String(result.newRepaidAmount),
+					status: result.fullyRepaid ? 'REPAID' : loan.status,
+					repaid_at: result.fullyRepaid ? new Date() : null
+				}).where(eq(loans.id, loan_id));
+
+				// TAX_POOL: create bank transaction (trigger auto-increases balance)
+				if (loan.loan_type === 'TAX_POOL' && loan.source_bank_account_id) {
+					await tx.insert(bankTransactions).values({
+						bank_account_id: loan.source_bank_account_id,
+						transaction_type: 'REPAY_TAX',
+						amount: String(repay_amount),
+						action_by_user_id: locals.user!.sub,
+						tags: { loan_id: loan.id, type: 'loan_repayment' }
+					});
+				}
+			});
+
+			// Audit log (also serves as repayment history)
+			const [agencyRow] = await db.select({ name: agencies.name }).from(agencies).where(eq(agencies.id, loan.borrower_agency_id));
+			await writeAuditLog({
+				collection: 'bank_transaction_histories',
+				action_type: 'LOAN_REPAID',
+				agency_id: loan.borrower_agency_id,
+				agency_name: agencyRow?.name || '',
+				loan_id: loan.id,
+				loan_type: loan.loan_type,
+				repay_amount,
+				new_repaid_amount: result.newRepaidAmount,
+				remaining: Number(loan.amount) - result.newRepaidAmount,
+				fully_repaid: result.fullyRepaid,
+				action_by: {
+					user_id: locals.user!.sub,
+					name: locals.user!.name,
+					ip_address: getClientAddress()
+				}
+			});
+
+			// Notify approver when fully repaid
+			if (result.fullyRepaid && loan.approved_by_user_id) {
+				await createNotification({
+					userId: loan.approved_by_user_id,
+					title: 'ชำระคืนเงินยืมครบแล้ว',
+					message: `เงินยืม ${Number(loan.amount).toLocaleString()} บาท (${loan.loan_type === 'TAX_POOL' ? 'จากภาษี' : 'ข้ามหน่วยงาน'}) ได้ชำระคืนครบถ้วนแล้ว`,
+					actionUrl: '/finance',
+					notificationType: 'APPROVAL_REQUIRED'
+				});
+			}
+
+			return { success: true, message: result.fullyRepaid ? 'ชำระคืนครบแล้ว' : 'บันทึกการชำระคืนแล้ว' };
 		} catch (err) {
 			console.error('Repay loan error:', err);
 			return fail(500, { success: false, errors: { loan_id: ['เกิดข้อผิดพลาด กรุณาลองใหม่'] } });

@@ -57,7 +57,7 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 			.where(eq(documents.agency_id, agencyId))
 			.orderBy(asc(documents.id));
 
-		// V2 execution-phase documents (type1/2/3 only, no workflow_id)
+		// V2 documents (approval + execution phase, no workflow_id)
 		const v2Docs = await db
 			.select({
 				id: documents.id, slug: documents.slug,
@@ -77,8 +77,7 @@ export const load: PageServerLoad = async ({ parent, url, cookies }) => {
 			.innerJoin(plans, eq(documents.plan_id, plans.id))
 			.where(and(
 				eq(documents.agency_id, agencyId),
-				eq(documents.phase, 'EXECUTION'),
-				inArray(documents.doc_type, ['type1_nParcel', 'type2_iParcelUtil', 'type3_iParcel'])
+				inArray(documents.phase, ['APPROVAL', 'EXECUTION', 'COMPLETED'])
 			))
 			.orderBy(asc(documents.id));
 

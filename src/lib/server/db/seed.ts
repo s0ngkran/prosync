@@ -245,6 +245,7 @@ async function seed() {
 		roles = await db
 			.insert(schema.roles)
 			.values([
+				// ─── 1. ผู้อำนวยการ (Director) — Step 5: DIRECTOR_APPROVE ───
 				{
 					name: 'ผู้อำนวยการ',
 					permissions: {
@@ -255,6 +256,7 @@ async function seed() {
 						audit: { can_view_audit_trail: true }
 					}
 				},
+				// ─── 2. รองผู้อำนวยการ (Deputy Director) ───
 				{
 					name: 'รองผู้อำนวยการ',
 					permissions: {
@@ -265,6 +267,51 @@ async function seed() {
 						audit: { can_view_audit_trail: true }
 					}
 				},
+				// ─── 3. หัวหน้าแผนก (Division Head) — Step 2: HEAD_APPROVE ───
+				{
+					name: 'หัวหน้าแผนก',
+					permissions: {
+						system: { can_manage_users: false, can_manage_org_units: true },
+						planning: { can_view_plan: true, can_create_plan: true, can_edit_plan: true, can_delete_plan: false },
+						procurement: { can_view_document: true, can_create_document: true, can_approve_document: true },
+						finance: { can_view_dika: false, can_create_dika: false, can_approve_dika: false },
+						audit: { can_view_audit_trail: true }
+					}
+				},
+				// ─── 4. เจ้าหน้าที่ประจำแผนก (Division Staff) — Step 1: DIVISION_DRAFT ───
+				{
+					name: 'เจ้าหน้าที่ประจำแผนก',
+					permissions: {
+						system: { can_manage_users: false, can_manage_org_units: false },
+						planning: { can_view_plan: true, can_create_plan: false, can_edit_plan: false, can_delete_plan: false },
+						procurement: { can_view_document: true, can_create_document: true, can_approve_document: false },
+						finance: { can_view_dika: false, can_create_dika: false, can_approve_dika: false },
+						audit: { can_view_audit_trail: false }
+					}
+				},
+				// ─── 5. หัวหน้าแผนกแผนงาน (Planning Head) — Step 4: PLANNER_DIRECTOR_APPROVE ───
+				{
+					name: 'หัวหน้าแผนกแผนงาน',
+					permissions: {
+						system: { can_manage_users: false, can_manage_org_units: true },
+						planning: { can_view_plan: true, can_create_plan: true, can_edit_plan: true, can_delete_plan: true },
+						procurement: { can_view_document: true, can_create_document: false, can_approve_document: true },
+						finance: { can_view_dika: true, can_create_dika: false, can_approve_dika: false },
+						audit: { can_view_audit_trail: true }
+					}
+				},
+				// ─── 6. เจ้าหน้าที่แผนงาน (Planning Officer) — Step 3: PLANNER_CHECK ───
+				{
+					name: 'เจ้าหน้าที่แผนงาน',
+					permissions: {
+						system: { can_manage_users: false, can_manage_org_units: false },
+						planning: { can_view_plan: true, can_create_plan: true, can_edit_plan: true, can_delete_plan: false },
+						procurement: { can_view_document: true, can_create_document: false, can_approve_document: true },
+						finance: { can_view_dika: false, can_create_dika: false, can_approve_dika: false },
+						audit: { can_view_audit_trail: false }
+					}
+				},
+				// ─── 7. หัวหน้าเจ้าหน้าที่พัสดุ (Procurement Head) — Execution phase ───
 				{
 					name: 'หัวหน้าเจ้าหน้าที่พัสดุ',
 					permissions: {
@@ -275,6 +322,18 @@ async function seed() {
 						audit: { can_view_audit_trail: true }
 					}
 				},
+				// ─── 8. เจ้าหน้าที่พัสดุ (Procurement Officer) — Execution phase ───
+				{
+					name: 'เจ้าหน้าที่พัสดุ',
+					permissions: {
+						system: { can_manage_users: false, can_manage_org_units: false },
+						planning: { can_view_plan: true, can_create_plan: false, can_edit_plan: false, can_delete_plan: false },
+						procurement: { can_view_document: true, can_create_document: true, can_approve_document: false },
+						finance: { can_view_dika: false, can_create_dika: false, can_approve_dika: false },
+						audit: { can_view_audit_trail: false }
+					}
+				},
+				// ─── 9. หัวหน้ากองคลัง (Finance Head) ───
 				{
 					name: 'หัวหน้ากองคลัง',
 					permissions: {
@@ -285,26 +344,7 @@ async function seed() {
 						audit: { can_view_audit_trail: true }
 					}
 				},
-				{
-					name: 'หัวหน้าแผนก',
-					permissions: {
-						system: { can_manage_users: false, can_manage_org_units: true },
-						planning: { can_view_plan: true, can_create_plan: true, can_edit_plan: true, can_delete_plan: false },
-						procurement: { can_view_document: true, can_create_document: true, can_approve_document: false },
-						finance: { can_view_dika: false, can_create_dika: false, can_approve_dika: false },
-						audit: { can_view_audit_trail: true }
-					}
-				},
-				{
-					name: 'เจ้าหน้าที่พัสดุ',
-					permissions: {
-						system: { can_manage_users: false, can_manage_org_units: false },
-						planning: { can_view_plan: false, can_create_plan: false, can_edit_plan: false, can_delete_plan: false },
-						procurement: { can_view_document: true, can_create_document: true, can_approve_document: false },
-						finance: { can_view_dika: false, can_create_dika: false, can_approve_dika: false },
-						audit: { can_view_audit_trail: false }
-					}
-				},
+				// ─── 10. เจ้าหน้าที่การเงิน (Finance Officer) ───
 				{
 					name: 'เจ้าหน้าที่การเงิน',
 					permissions: {
@@ -315,6 +355,7 @@ async function seed() {
 						audit: { can_view_audit_trail: false }
 					}
 				},
+				// ─── 11. แพทย์ (Doctor) — committee member ───
 				{
 					name: 'แพทย์',
 					permissions: {
@@ -325,6 +366,7 @@ async function seed() {
 						audit: { can_view_audit_trail: false }
 					}
 				},
+				// ─── 12. พยาบาล (Nurse) — committee member ───
 				{
 					name: 'พยาบาล',
 					permissions: {
@@ -335,6 +377,7 @@ async function seed() {
 						audit: { can_view_audit_trail: false }
 					}
 				},
+				// ─── 13. นักวิชาการ (Specialist) — committee member ───
 				{
 					name: 'นักวิชาการ',
 					permissions: {
@@ -345,6 +388,7 @@ async function seed() {
 						audit: { can_view_audit_trail: false }
 					}
 				},
+				// ─── 14. เจ้าหน้าที่ธุรการ (Admin) ───
 				{
 					name: 'เจ้าหน้าที่ธุรการ',
 					permissions: {
@@ -555,23 +599,54 @@ async function seed() {
 	const rootUnit = orgUnits.find((u) => u.parent_id === null)!;
 	const procurementUnit = orgUnits.find((u) => u.name === 'พัสดุและจัดซื้อจัดจ้าง');
 	const financeUnit = orgUnits.find((u) => u.name === 'การเงินและบัญชี');
+	const planningUnit = orgUnits.find((u) => u.name === 'แผนงานและประเมินผล');
+	const surgeryUnit = orgUnits.find((u) => u.name === 'ศัลยกรรม');
+	const medicineUnit = orgUnits.find((u) => u.name === 'อายุรกรรม');
+	const pediatricUnit = orgUnits.find((u) => u.name === 'กุมารเวชกรรม');
+	const pharmacyUnit = orgUnits.find((u) => u.name === 'เภสัชกรรม');
+	const itUnit = orgUnits.find((u) => u.name === 'เทคโนโลยีสารสนเทศ');
 	const subUnits = orgUnits.filter((u) => u.parent_id !== null);
 
-	if (existingCount < 20) {
+	if (existingCount < 30) {
 		const passwordHash = await hash('password1234');
 
-		// ── Named users for the 15-step workflow ──
+		// ── Named users for the v2 procurement workflow ──
+		// Flow: Division Staff (draft) → Division Head (approve) → Planner (check) → Planning Head (recommend) → Director (approve)
 		const namedUsers = [
+			// ─── Executive Level ───
 			{ name: 'นพ.สมชาย สุขใจ', email: 'director@hospital.go.th', position: 'นพ.', positionRank: 'ผู้อำนวยการโรงพยาบาล', roleName: 'ผู้อำนวยการ', orgUnit: rootUnit, idCard: '1100100010001' },
 			{ name: 'นางสมหญิง ดีงาม', email: 'vice-director@hospital.go.th', position: 'นาง', positionRank: 'รองผู้อำนวยการฝ่ายบริหาร', roleName: 'รองผู้อำนวยการ', orgUnit: rootUnit, idCard: '1100100010002' },
+
+			// ─── Division Heads (Step 2: HEAD_APPROVE) ───
+			{ name: 'นพ.ชัยวัฒน์ แก้วมณี', email: 'head-surgery@hospital.go.th', position: 'นพ.', positionRank: 'หัวหน้ากลุ่มงานศัลยกรรม', roleName: 'หัวหน้าแผนก', orgUnit: surgeryUnit || subUnits[0], idCard: '1100100010011' },
+			{ name: 'นพ.สุรชัย ศิริวัฒน์', email: 'head-medicine@hospital.go.th', position: 'นพ.', positionRank: 'หัวหน้ากลุ่มงานอายุรกรรม', roleName: 'หัวหน้าแผนก', orgUnit: medicineUnit || subUnits[1], idCard: '1100100010012' },
+			{ name: 'พญ.นิตยา ทองดี', email: 'head-pediatric@hospital.go.th', position: 'พญ.', positionRank: 'หัวหน้ากลุ่มงานกุมารเวชกรรม', roleName: 'หัวหน้าแผนก', orgUnit: pediatricUnit || subUnits[2], idCard: '1100100010013' },
+			{ name: 'ภก.พิชัย สมบูรณ์', email: 'head-pharmacy@hospital.go.th', position: 'ภก.', positionRank: 'หัวหน้ากลุ่มงานเภสัชกรรม', roleName: 'หัวหน้าแผนก', orgUnit: pharmacyUnit || subUnits[3], idCard: '1100100010014' },
+
+			// ─── Division Staff (Step 1: DIVISION_DRAFT) ───
+			{ name: 'นางรัตนา จันทร์เพ็ญ', email: 'staff-surgery@hospital.go.th', position: 'นาง', positionRank: 'เจ้าพนักงานธุรการชำนาญงาน', roleName: 'เจ้าหน้าที่ประจำแผนก', orgUnit: surgeryUnit || subUnits[0], idCard: '1100100010015' },
+			{ name: 'นายอนุชา เจริญรุ่ง', email: 'staff-medicine@hospital.go.th', position: 'นาย', positionRank: 'เจ้าพนักงานธุรการชำนาญงาน', roleName: 'เจ้าหน้าที่ประจำแผนก', orgUnit: medicineUnit || subUnits[1], idCard: '1100100010016' },
+			{ name: 'นางสาวมาลี แสงทอง', email: 'staff-pediatric@hospital.go.th', position: 'นางสาว', positionRank: 'เจ้าพนักงานธุรการชำนาญงาน', roleName: 'เจ้าหน้าที่ประจำแผนก', orgUnit: pediatricUnit || subUnits[2], idCard: '1100100010017' },
+			{ name: 'นางสาวสมพร บุญมี', email: 'staff-pharmacy@hospital.go.th', position: 'นางสาว', positionRank: 'เจ้าพนักงานเภสัชกรรมชำนาญงาน', roleName: 'เจ้าหน้าที่ประจำแผนก', orgUnit: pharmacyUnit || subUnits[3], idCard: '1100100010018' },
+
+			// ─── Planning Unit (Steps 3 & 4: PLANNER_CHECK & PLANNER_DIRECTOR_APPROVE) ───
+			{ name: 'นางวรรณา มั่นคง', email: 'planning-head@hospital.go.th', position: 'นาง', positionRank: 'หัวหน้ากลุ่มงานแผนงานและประเมินผล', roleName: 'หัวหน้าแผนกแผนงาน', orgUnit: planningUnit || subUnits[5], idCard: '1100100010019' },
+			{ name: 'นายสมศักดิ์ รักไทย', email: 'planner1@hospital.go.th', position: 'นาย', positionRank: 'นักวิเคราะห์นโยบายและแผนชำนาญการ', roleName: 'เจ้าหน้าที่แผนงาน', orgUnit: planningUnit || subUnits[5], idCard: '1100100010020' },
+			{ name: 'นางสาวนภา พงษ์พันธ์', email: 'planner2@hospital.go.th', position: 'นางสาว', positionRank: 'นักวิเคราะห์นโยบายและแผนปฏิบัติการ', roleName: 'เจ้าหน้าที่แผนงาน', orgUnit: planningUnit || subUnits[5], idCard: '1100100010021' },
+
+			// ─── Procurement Unit (Execution phase — after approval) ───
 			{ name: 'นายวิชัย ศรีสุข', email: 'procurement-head@hospital.go.th', position: 'นาย', positionRank: 'หัวหน้าเจ้าหน้าที่พัสดุ', roleName: 'หัวหน้าเจ้าหน้าที่พัสดุ', orgUnit: procurementUnit || subUnits[0], idCard: '1100100010003' },
-			{ name: 'นางสุภาพ มั่นคง', email: 'procurement1@hospital.go.th', position: 'นาง', positionRank: 'เจ้าพนักงานพัสดุชำนาญงาน', roleName: 'เจ้าหน้าที่พัสดุ', orgUnit: procurementUnit || subUnits[0], idCard: '1100100010004' },
-			{ name: 'นายประเสริฐ เจริญรุ่ง', email: 'procurement2@hospital.go.th', position: 'นาย', positionRank: 'เจ้าพนักงานพัสดุชำนาญงาน', roleName: 'เจ้าหน้าที่พัสดุ', orgUnit: procurementUnit || subUnits[0], idCard: '1100100010005' },
-			{ name: 'นางนภา แสงทอง', email: 'finance-head@hospital.go.th', position: 'นาง', positionRank: 'หัวหน้ากองคลัง', roleName: 'หัวหน้ากองคลัง', orgUnit: financeUnit || subUnits[1], idCard: '1100100010006' },
-			{ name: 'นายธนพล บุญมี', email: 'finance1@hospital.go.th', position: 'นาย', positionRank: 'นักวิชาการเงินและบัญชีชำนาญการ', roleName: 'เจ้าหน้าที่การเงิน', orgUnit: financeUnit || subUnits[1], idCard: '1100100010007' },
+			{ name: 'นางสุภาพ วงศ์สวัสดิ์', email: 'procurement1@hospital.go.th', position: 'นาง', positionRank: 'เจ้าพนักงานพัสดุชำนาญงาน', roleName: 'เจ้าหน้าที่พัสดุ', orgUnit: procurementUnit || subUnits[0], idCard: '1100100010004' },
+			{ name: 'นายประเสริฐ ดีงาม', email: 'procurement2@hospital.go.th', position: 'นาย', positionRank: 'เจ้าพนักงานพัสดุชำนาญงาน', roleName: 'เจ้าหน้าที่พัสดุ', orgUnit: procurementUnit || subUnits[0], idCard: '1100100010005' },
+
+			// ─── Finance Unit ───
+			{ name: 'นางนภา ศรีสุข', email: 'finance-head@hospital.go.th', position: 'นาง', positionRank: 'หัวหน้ากองคลัง', roleName: 'หัวหน้ากองคลัง', orgUnit: financeUnit || subUnits[1], idCard: '1100100010006' },
+			{ name: 'นายธนพล สุขใจ', email: 'finance1@hospital.go.th', position: 'นาย', positionRank: 'นักวิชาการเงินและบัญชีชำนาญการ', roleName: 'เจ้าหน้าที่การเงิน', orgUnit: financeUnit || subUnits[1], idCard: '1100100010007' },
+
+			// ─── Committee Members ───
 			{ name: 'นางอรุณี รักไทย', email: 'committee1@hospital.go.th', position: 'นาง', positionRank: 'พยาบาลวิชาชีพชำนาญการพิเศษ', roleName: 'พยาบาล', orgUnit: subUnits[2], idCard: '1100100010008' },
 			{ name: 'นายกิตติ พงษ์พันธ์', email: 'committee2@hospital.go.th', position: 'นาย', positionRank: 'เภสัชกรชำนาญการ', roleName: 'นักวิชาการ', orgUnit: subUnits[3], idCard: '1100100010009' },
-			{ name: 'นางพิมพ์ใจ วงศ์สวัสดิ์', email: 'committee3@hospital.go.th', position: 'นาง', positionRank: 'นักวิชาการคอมพิวเตอร์ชำนาญการ', roleName: 'นักวิชาการ', orgUnit: subUnits[4], idCard: '1100100010010' }
+			{ name: 'นางพิมพ์ใจ วงศ์สวัสดิ์', email: 'committee3@hospital.go.th', position: 'นาง', positionRank: 'นักวิชาการคอมพิวเตอร์ชำนาญการ', roleName: 'นักวิชาการ', orgUnit: itUnit || subUnits[4], idCard: '1100100010010' }
 		];
 
 		const createdNamedUsers: { id: number; name: string; email: string }[] = [];
@@ -613,28 +688,29 @@ async function seed() {
 			}
 		}
 
-		// Set director as head of root org unit
-		const directorUser = createdNamedUsers.find((u) => u.email === 'director@hospital.go.th');
-		if (directorUser && rootUnit) {
-			await db.update(schema.orgUnits).set({ head_of_unit_id: directorUser.id }).where(eq(schema.orgUnits.id, rootUnit.id));
-		}
+		// ── Set head_of_unit for all key org units ──
+		const headMappings: { email: string; unit: typeof rootUnit | undefined }[] = [
+			{ email: 'director@hospital.go.th', unit: rootUnit },
+			{ email: 'head-surgery@hospital.go.th', unit: surgeryUnit },
+			{ email: 'head-medicine@hospital.go.th', unit: medicineUnit },
+			{ email: 'head-pediatric@hospital.go.th', unit: pediatricUnit },
+			{ email: 'head-pharmacy@hospital.go.th', unit: pharmacyUnit },
+			{ email: 'planning-head@hospital.go.th', unit: planningUnit },
+			{ email: 'procurement-head@hospital.go.th', unit: procurementUnit },
+			{ email: 'finance-head@hospital.go.th', unit: financeUnit },
+		];
 
-		// Set procurement head as head of procurement unit
-		const procHead = createdNamedUsers.find((u) => u.email === 'procurement-head@hospital.go.th');
-		if (procHead && procurementUnit) {
-			await db.update(schema.orgUnits).set({ head_of_unit_id: procHead.id }).where(eq(schema.orgUnits.id, procurementUnit.id));
-		}
-
-		// Set finance head as head of finance unit
-		const finHead = createdNamedUsers.find((u) => u.email === 'finance-head@hospital.go.th');
-		if (finHead && financeUnit) {
-			await db.update(schema.orgUnits).set({ head_of_unit_id: finHead.id }).where(eq(schema.orgUnits.id, financeUnit.id));
+		for (const hm of headMappings) {
+			const headUser = createdNamedUsers.find((u) => u.email === hm.email);
+			if (headUser && hm.unit) {
+				await db.update(schema.orgUnits).set({ head_of_unit_id: headUser.id }).where(eq(schema.orgUnits.id, hm.unit.id));
+			}
 		}
 
 		console.log(`✅ Named workflow users created (${createdNamedUsers.length} users)`);
 
-		// ── Additional random users to fill to 20 ──
-		const remainingCount = 20 - existingCount - createdNamedUsers.length;
+		// ── Additional random users to fill to 30 ──
+		const remainingCount = 30 - existingCount - createdNamedUsers.length;
 		if (remainingCount > 0) {
 			const roleNames = ['แพทย์', 'พยาบาล', 'นักวิชาการ', 'เจ้าหน้าที่ธุรการ'];
 			for (let i = 0; i < remainingCount; i++) {
@@ -809,19 +885,22 @@ async function seed() {
 	const existingPlans = await db.select().from(schema.plans);
 
 	if (existingPlans.length < 50) {
-		const parentUnits = orgUnits.filter((u) => {
-			const parent = orgUnits.find((ou) => ou.id === u.parent_id);
-			return parent && parent.parent_id !== null;
-		});
+		// ── Parent departments (level 1 under root) — for parent plans ──
+		const parentDepartments = orgUnits.filter((u) => u.parent_id === rootUnit.id);
 
-		const allUnits = orgUnits.filter((u) => u.parent_id !== null);
+		// ── Build a map: parent department id → its sub-units ──
+		const subUnitsByParent = new Map<number, typeof orgUnits>();
+		for (const dept of parentDepartments) {
+			const children = orgUnits.filter((u) => u.parent_id === dept.id);
+			subUnitsByParent.set(dept.id, children);
+		}
 
-		// Create 10 parent plans
+		// Create 10 parent plans — each assigned to a PARENT department
 		const parentPlans = await db
 			.insert(schema.plans)
 			.values(
 				parentPlanTemplates.map((template, idx) => {
-					const responsibleUnit = parentUnits[idx % parentUnits.length];
+					const responsibleDept = parentDepartments[idx % parentDepartments.length];
 					const estimatedAmount =
 						template.type === 'INCOME'
 							? randomAmount(5000000, 20000000)
@@ -833,7 +912,7 @@ async function seed() {
 						fiscal_year_id: fiscalYear.id,
 						title: template.title,
 						parent_id: null,
-						responsible_unit_id: responsibleUnit?.id || null,
+						responsible_unit_id: responsibleDept?.id || null,
 						start_date: '2025-10-01',
 						end_date: '2026-09-30',
 						duration_text: '12 เดือน',
@@ -852,12 +931,21 @@ async function seed() {
 			.returning();
 
 		// Create 40 child plans (4 per parent)
+		// Child plans MUST be assigned to sub-units under the parent plan's department
 		const childPlans = [];
 		for (const parentPlan of parentPlans) {
+			// Get sub-units of the parent plan's responsible department
+			const parentDeptId = parentPlan.responsible_unit_id;
+			const availableSubUnits = parentDeptId ? (subUnitsByParent.get(parentDeptId) || []) : [];
+
 			for (let i = 0; i < 4; i++) {
 				const template =
 					childPlanTemplates[(parentPlan.id + i) % childPlanTemplates.length];
-				const responsibleUnit = allUnits[randomInt(0, allUnits.length - 1)];
+				// Assign to sub-unit within parent's department hierarchy
+				// If no sub-units exist, fall back to the parent department itself
+				const responsibleUnit = availableSubUnits.length > 0
+					? availableSubUnits[i % availableSubUnits.length]
+					: { id: parentDeptId };
 				const estimatedAmount = randomAmount(100000, 3000000);
 				const actualAmount = randomAmount(0, Number(estimatedAmount) * 0.9);
 
@@ -888,6 +976,7 @@ async function seed() {
 		console.log(
 			`✅ Plans seeded (${parentPlans.length} parent + ${childPlans.length} child = ${parentPlans.length + childPlans.length} total)`
 		);
+		console.log('   ℹ️  Child plans assigned to sub-units under parent plan\'s responsible department');
 	} else {
 		console.log('ℹ️  Plans already exist (50+ plans)');
 	}
@@ -954,58 +1043,148 @@ async function seed() {
 	if (existingDocs.length === 0) {
 		const allUsers = await db.select({ id: schema.users.id, email: schema.users.email }).from(schema.users).where(isNull(schema.users.deleted_at));
 		const directorU = allUsers.find((u) => u.email === 'director@hospital.go.th');
+		const planningHeadU = allUsers.find((u) => u.email === 'planning-head@hospital.go.th');
+		const planner1U = allUsers.find((u) => u.email === 'planner1@hospital.go.th');
 		const procHeadU = allUsers.find((u) => u.email === 'procurement-head@hospital.go.th');
-		const proc1U = allUsers.find((u) => u.email === 'procurement1@hospital.go.th');
-		const proc2U = allUsers.find((u) => u.email === 'procurement2@hospital.go.th');
 		const finHeadU = allUsers.find((u) => u.email === 'finance-head@hospital.go.th');
-		const fin1U = allUsers.find((u) => u.email === 'finance1@hospital.go.th');
+
+		// Division staff & heads for workflow
+		const staffSurgeryU = allUsers.find((u) => u.email === 'staff-surgery@hospital.go.th');
+		const headSurgeryU = allUsers.find((u) => u.email === 'head-surgery@hospital.go.th');
 
 		const leafPlans = await db.select().from(schema.plans).where(eq(schema.plans.is_leaf_node, true));
 
-		// V2: สร้างเอกสารตัวอย่างแบบใหม่ (ใช้ approval-flow + payment-rounds)
-		const createV2Doc = async (planId, docType, procMethod, creatorId, title, phase = 'APPROVAL') => {
+		if (leafPlans.length >= 13 && staffSurgeryU && directorU && vendors.length >= 3) {
 			const { randomUUID } = await import('crypto');
-			const [doc] = await db.insert(schema.documents).values({
-				slug: randomUUID(), agency_id: hospital.id, plan_id: planId, workflow_id: null,
-				payload: { title }, status: phase === 'EXECUTION' ? 'APPROVED_PROCUREMENT' : 'IN_PROGRESS',
-				updated_by: creatorId, doc_type: docType, procurement_method: procMethod, phase
-			}).returning();
-			if (!doc) return null;
-			const stepDefs = [
-				{ seq: 1, code: 'DIVISION_DRAFT', name: 'แผนกรับผิดชอบ — ร่าง' },
-				{ seq: 2, code: 'HEAD_APPROVE', name: 'หัวหน้าแผนก — อนุมัติ' },
-				{ seq: 3, code: 'PLANNER_CHECK', name: 'แผนกแผนงาน — ตรวจสอบ' },
-				{ seq: 4, code: 'PLANNER_DIRECTOR_APPROVE', name: 'หัวหน้าแผนงาน — เสนอ ผอ.' },
-				{ seq: 5, code: 'DIRECTOR_APPROVE', name: 'ผู้อำนวยการ — อนุมัติ' }
-			];
-			const isApproved = phase === 'EXECUTION' || phase === 'COMPLETED';
-			for (const sd of stepDefs) {
-				await db.insert(schema.documentApprovalSteps).values({
-					document_id: doc.id, step_sequence: sd.seq, step_code: sd.code, step_name: sd.name,
-					assigned_user_id: creatorId, status: isApproved ? 'APPROVED' : (sd.seq === 1 ? 'IN_PROGRESS' : 'PENDING'),
-					completed_at: isApproved ? new Date() : null
-				});
-			}
-			if (phase === 'EXECUTION' && ['type1_nParcel', 'type2_iParcelUtil', 'type3_iParcel'].includes(docType)) {
-				await db.insert(schema.paymentRounds).values({
-					document_id: doc.id, round_number: 1, status: 'BILL_PENDING', current_actor_role: 'PROCUREMENT'
-				});
-			}
-			return doc;
-		};
+			const now = new Date();
+			const daysAgo = (n: number) => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
 
-		if (leafPlans.length >= 6 && proc1U && directorU) {
-			await createV2Doc(leafPlans[0].id, 'type1_nParcel', 'specific_lte100k', proc1U.id, 'จัดซื้อวัสดุสำนักงาน');
-			await createV2Doc(leafPlans[1].id, 'type1_nParcel', 'specific_gt100k', proc1U.id, 'จัดซื้อเครื่องพิมพ์ Laser');
-			await createV2Doc(leafPlans[2].id, 'type2_iParcelUtil', 'specific_lte100k', proc1U.id, 'ค่าไฟฟ้าประจำเดือน');
-			await createV2Doc(leafPlans[3].id, 'type3_iParcel', 'selection', proc1U.id, 'ค่าซ่อมบำรุงเครื่องปรับอากาศ');
-			await createV2Doc(leafPlans[4].id, 'type1_nParcel', 'e_bidding', proc1U.id, 'จัดซื้อเครื่อง CT Scan (รอจัดทำเอกสาร)', 'EXECUTION');
-			await createV2Doc(leafPlans[5].id, 'type1_nParcel', 'selection', proc1U.id, 'จัดซื้อครุภัณฑ์ห้องผ่าตัด (รอจัดทำเอกสาร)', 'EXECUTION');
-			if (leafPlans[6]) await createV2Doc(leafPlans[6].id, 'type2_iParcelUtil', 'specific_lte100k', proc1U.id, 'ค่าน้ำประปา (รอจัดทำเอกสาร)', 'EXECUTION');
-			if (leafPlans[7]) await createV2Doc(leafPlans[7].id, 'type4_iFinance', null, proc1U.id, 'ค่าล่วงเวลาบุคลากร');
-			if (leafPlans[8]) await createV2Doc(leafPlans[8].id, 'type5_project', null, proc1U.id, 'โครงการอบรมพัฒนาบุคลากร');
-			if (leafPlans[9]) await createV2Doc(leafPlans[9].id, 'type1_nParcel', 'specific_lte100k', proc1U.id, 'จัดซื้อกระดาษ A4 (เสร็จสิ้น)', 'COMPLETED');
-			console.log('✅ V2 Documents seeded with approval steps + payment rounds');
+			const creatorId = staffSurgeryU.id;
+			const headId = headSurgeryU?.id || null;
+			const plannerId = planner1U?.id || null;
+			const planningHeadId = planningHeadU?.id || null;
+			const directorId = directorU?.id || null;
+			const procHeadId = procHeadU?.id || null;
+			const finHeadId = finHeadU?.id || null;
+			const committee1Id = allUsers.find(u => u.email === 'committee1@hospital.go.th')?.id || null;
+			const committee2Id = allUsers.find(u => u.email === 'committee2@hospital.go.th')?.id || null;
+			const committee3Id = allUsers.find(u => u.email === 'committee3@hospital.go.th')?.id || null;
+
+			// Reusable step definitions
+			const makeSteps = (docId: number, approvedUpTo: number) => {
+				const defs = [
+					{ seq: 1, code: 'DIVISION_DRAFT', name: 'แผนกรับผิดชอบ — ร่าง', userId: creatorId },
+					{ seq: 2, code: 'HEAD_APPROVE', name: 'หัวหน้าแผนก — อนุมัติ', userId: headId },
+					{ seq: 3, code: 'PLANNER_CHECK', name: 'แผนกแผนงาน — ตรวจสอบ', userId: plannerId },
+					{ seq: 4, code: 'PLANNER_DIRECTOR_APPROVE', name: 'หัวหน้าแผนงาน — เสนอ ผอ.', userId: planningHeadId },
+					{ seq: 5, code: 'DIRECTOR_APPROVE', name: 'ผู้อำนวยการ — อนุมัติ', userId: directorId }
+				];
+				return defs.map(d => ({
+					document_id: docId, step_sequence: d.seq, step_code: d.code, step_name: d.name,
+					assigned_user_id: d.userId,
+					status: d.seq <= approvedUpTo ? 'APPROVED' : (d.seq === approvedUpTo + 1 ? 'IN_PROGRESS' : 'PENDING'),
+					completed_at: d.seq <= approvedUpTo ? daysAgo(5 - d.seq) : null
+				}));
+			};
+
+			// Bill payload template (specific_lte100k sections, fully filled)
+			const fullBillPayload = {
+				purchase_request: { report_pdf: '/uploads/sample/purchase_request.pdf', report_pdf_name: 'รายงานขอซื้อขอจ้าง.pdf' },
+				quotation: {
+					vendors: [
+						{ vendor_id: vendors[0].id, company_name: vendors[0].company_name, proposed_price: '85000.00' },
+						{ vendor_id: vendors[1].id, company_name: vendors[1].company_name, proposed_price: '92000.00' },
+						{ vendor_id: vendors[2].id, company_name: vendors[2].company_name, proposed_price: '88500.00' }
+					],
+					winner_vendor_id: vendors[0].id
+				},
+				approval: { approval_pdf: '/uploads/sample/approval.pdf', approval_pdf_name: 'เอกสารอนุมัติ.pdf' },
+				winner_announcement: { announcement_pdf: '/uploads/sample/winner.pdf', announcement_pdf_name: 'ประกาศผู้ชนะ.pdf' },
+				purchase_order: { po_pdf: '/uploads/sample/po.pdf', po_pdf_name: 'ใบสั่งซื้อ.pdf' },
+				inspection_committee: { committee: [{ user_id: committee1Id, role: 'ประธาน' }, { user_id: committee2Id, role: 'กรรมการ' }, { user_id: committee3Id, role: 'กรรมการ' }] },
+				inspection_report: { inspection_pdf: '/uploads/sample/inspection.pdf', inspection_pdf_name: 'ใบตรวจรับ.pdf', invoice_pdf: '/uploads/sample/invoice.pdf', invoice_pdf_name: 'ใบแจ้งหนี้.pdf' }
+			};
+
+			// Helper: create a full doc with bidders
+			const createFullDoc = async (planIdx: number, title: string, phase: string, status: string, approvedSteps: number, paymentStatus: string | null) => {
+				const [doc] = await db.insert(schema.documents).values({
+					slug: randomUUID(), agency_id: hospital.id, plan_id: leafPlans[planIdx].id, workflow_id: null,
+					payload: { title }, status, updated_by: creatorId,
+					doc_type: 'type1_nParcel', procurement_method: 'specific_lte100k', phase
+				}).returning();
+				// Approval steps
+				const steps = makeSteps(doc.id, approvedSteps);
+				for (const s of steps) await db.insert(schema.documentApprovalSteps).values(s);
+				// Payment round (only for EXECUTION+)
+				if (paymentStatus) {
+					const prData: any = {
+						document_id: doc.id, round_number: 1, status: paymentStatus,
+						current_actor_role: paymentStatus === 'BILL_PENDING' ? 'PROCUREMENT' : 'FINANCE'
+					};
+					if (['BILL_CREATED','SENT_TO_FINANCE','FINANCE_SEEN','DIKA_CREATED','DIRECTOR_APPROVED','PAID','STAMPED'].includes(paymentStatus)) {
+						prData.bill_payload = fullBillPayload;
+						prData.bill_created_by = procHeadId;
+						prData.bill_created_at = daysAgo(5);
+					}
+					if (['SENT_TO_FINANCE','FINANCE_SEEN','DIKA_CREATED','DIRECTOR_APPROVED','PAID','STAMPED'].includes(paymentStatus)) {
+						prData.sent_to_finance_at = daysAgo(4);
+					}
+					if (['FINANCE_SEEN','DIKA_CREATED','DIRECTOR_APPROVED','PAID','STAMPED'].includes(paymentStatus)) {
+						prData.finance_seen_at = daysAgo(3);
+						prData.finance_seen_by = finHeadId;
+					}
+					if (['PAID','STAMPED'].includes(paymentStatus)) {
+						prData.check_no = 'CHK-2569-001';
+						prData.check_date = '2026-05-20';
+						prData.paid_at = daysAgo(1);
+						prData.paid_by = finHeadId;
+					}
+					if (paymentStatus === 'STAMPED') {
+						prData.stamped_at = now;
+						prData.stamped_by = finHeadId;
+					}
+					await db.insert(schema.paymentRounds).values(prData);
+				}
+				// Bidders (for EXECUTION+ docs)
+				if (phase === 'EXECUTION' || phase === 'COMPLETED') {
+					await db.insert(schema.documentBidders).values([
+						{ document_id: doc.id, vendor_id: vendors[0].id, proposed_price: '85000.00', is_winner: true, submitted_at: daysAgo(7) },
+						{ document_id: doc.id, vendor_id: vendors[1].id, proposed_price: '92000.00', is_winner: false, submitted_at: daysAgo(7) },
+						{ document_id: doc.id, vendor_id: vendors[2].id, proposed_price: '88500.00', is_winner: false, submitted_at: daysAgo(7) }
+					]);
+				}
+				return doc;
+			};
+
+			// ══════════════════════════════════════════
+			// APPROVAL PHASE — 1 document per step
+			// ══════════════════════════════════════════
+			await createFullDoc(0, '① รอแผนกร่างเอกสาร (DIVISION_DRAFT)', 'APPROVAL', 'IN_PROGRESS', 0, null);
+			await createFullDoc(1, '② รอหัวหน้าแผนกอนุมัติ (HEAD_APPROVE)', 'APPROVAL', 'IN_PROGRESS', 1, null);
+			await createFullDoc(2, '③ รอแผนงานตรวจสอบ (PLANNER_CHECK)', 'APPROVAL', 'IN_PROGRESS', 2, null);
+			await createFullDoc(3, '④ รอหัวหน้าแผนงานเสนอ ผอ. (PLANNER_DIRECTOR)', 'APPROVAL', 'IN_PROGRESS', 3, null);
+			await createFullDoc(4, '⑤ รอ ผอ. อนุมัติ (DIRECTOR_APPROVE)', 'APPROVAL', 'IN_PROGRESS', 4, null);
+
+			// ══════════════════════════════════════════
+			// EXECUTION PHASE — 1 document per payment status
+			// ══════════════════════════════════════════
+			await createFullDoc(5, '⑥ รอจัดทำเอกสาร (BILL_PENDING)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'BILL_PENDING');
+			await createFullDoc(6, '⑦ จัดทำเอกสารแล้ว (BILL_CREATED)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'BILL_CREATED');
+			await createFullDoc(7, '⑧ ส่งการเงินแล้ว (SENT_TO_FINANCE)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'SENT_TO_FINANCE');
+			await createFullDoc(8, '⑨ การเงินรับทราบ — พร้อมทำฎีกา (FINANCE_SEEN)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'FINANCE_SEEN');
+			await createFullDoc(9, '⑩ สร้างฎีกาแล้ว (DIKA_CREATED)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIKA_CREATED');
+			await createFullDoc(10, '⑪ ผอ. อนุมัติฎีกา (DIRECTOR_APPROVED)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIRECTOR_APPROVED');
+			await createFullDoc(11, '⑫ จ่ายเงินแล้ว (PAID)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'PAID');
+
+			// ══════════════════════════════════════════
+			// COMPLETED — จบครบ
+			// ══════════════════════════════════════════
+			if (leafPlans[12]) await createFullDoc(12, '⑬ ประทับจ่ายแล้ว — เสร็จสิ้น (STAMPED)', 'COMPLETED', 'PAID', 5, 'STAMPED');
+
+			console.log('✅ V2 Documents seeded — 1 document per workflow stage (13 stages)');
+			console.log('   ①-⑤  APPROVAL phase (5 approval steps)');
+			console.log('   ⑥-⑫  EXECUTION phase (7 payment statuses)');
+			console.log('   ⑬    COMPLETED');
 		}
 	} else {
 		console.log('ℹ️  Documents already exist');
@@ -1124,25 +1303,52 @@ async function seed() {
 	console.log('\n🎉 Database seeding complete!');
 	console.log('\n📊 Summary:');
 	console.log('   - Super Admin: 1 (email: admin@prosync.go.th, password: admin1234)');
-	console.log('   - Workflows: 5 วิธีจัดซื้อจัดจ้าง (ทุกวิธีจบด้วยฎีกา 4 ขั้นตอน)');
-	console.log('     🟢 วิธีเฉพาะเจาะจง ≤100K (12 steps)');
-	console.log('     🟡 วิธีเฉพาะเจาะจง 100K-500K (14 steps)');
-	console.log('     🟠 วิธีคัดเลือก (14 steps)');
-	console.log('     🔵 วิธี e-Bidding >500K (15 steps)');
-	console.log('     🟣 วิธี e-Market >500K (11 steps)');
-	console.log('   - Documents: IN_PROGRESS at various steps + APPROVED/REJECTED/CANCELLED');
-	console.log('   - Dika Sub-steps seeded: วางฎีกา → ตรวจสอบ → อนุมัติ → จ่ายเงิน');
-	console.log('\n🔐 Workflow User Credentials (password: password1234):');
-	console.log('   ผู้อำนวยการ (DIRECTOR):       director@hospital.go.th');
-	console.log('   รอง ผอ. (REVIEWER):            vice-director@hospital.go.th');
-	console.log('   หัวหน้าพัสดุ (REVIEWER):       procurement-head@hospital.go.th');
-	console.log('   เจ้าหน้าที่พัสดุ (CREATOR):    procurement1@hospital.go.th');
-	console.log('   เจ้าหน้าที่พัสดุ 2:            procurement2@hospital.go.th');
-	console.log('   หัวหน้าการเงิน:                finance-head@hospital.go.th');
-	console.log('   เจ้าหน้าที่การเงิน:            finance1@hospital.go.th');
-	console.log('   กรรมการ 1 (พยาบาล):            committee1@hospital.go.th');
-	console.log('   กรรมการ 2 (เภสัชกร):           committee2@hospital.go.th');
-	console.log('   กรรมการ 3 (IT):                committee3@hospital.go.th');
+	console.log('   - Roles: 14 (aligned with v2 procurement workflow)');
+	console.log('   - Plans: 10 parent + 40 child (child plans under parent\'s department hierarchy)');
+	console.log('');
+	console.log('🔄 V2 Procurement Workflow (5 steps):');
+	console.log('   1. เจ้าหน้าที่ประจำแผนก (DIVISION_DRAFT) — ร่างเอกสาร');
+	console.log('   2. หัวหน้าแผนก (HEAD_APPROVE) — อนุมัติร่าง');
+	console.log('   3. เจ้าหน้าที่แผนงาน (PLANNER_CHECK) — ตรวจสอบ');
+	console.log('   4. หัวหน้าแผนกแผนงาน (PLANNER_DIRECTOR_APPROVE) — เสนอ ผอ.');
+	console.log('   5. ผู้อำนวยการ (DIRECTOR_APPROVE) — อนุมัติ');
+	console.log('');
+	console.log('🔐 User Credentials (password: password1234):');
+	console.log('');
+	console.log('   ── Executive ──');
+	console.log('   ผู้อำนวยการ (Step 5):            director@hospital.go.th');
+	console.log('   รอง ผอ.:                         vice-director@hospital.go.th');
+	console.log('');
+	console.log('   ── Division Heads (Step 2: HEAD_APPROVE) ──');
+	console.log('   หัวหน้าศัลยกรรม:                 head-surgery@hospital.go.th');
+	console.log('   หัวหน้าอายุรกรรม:                head-medicine@hospital.go.th');
+	console.log('   หัวหน้ากุมารเวชกรรม:             head-pediatric@hospital.go.th');
+	console.log('   หัวหน้าเภสัชกรรม:                head-pharmacy@hospital.go.th');
+	console.log('');
+	console.log('   ── Division Staff (Step 1: DIVISION_DRAFT) ──');
+	console.log('   เจ้าหน้าที่ศัลยกรรม:             staff-surgery@hospital.go.th');
+	console.log('   เจ้าหน้าที่อายุรกรรม:            staff-medicine@hospital.go.th');
+	console.log('   เจ้าหน้าที่กุมารเวชกรรม:         staff-pediatric@hospital.go.th');
+	console.log('   เจ้าหน้าที่เภสัชกรรม:            staff-pharmacy@hospital.go.th');
+	console.log('');
+	console.log('   ── Planning Unit (Steps 3 & 4) ──');
+	console.log('   หัวหน้าแผนกแผนงาน (Step 4):      planning-head@hospital.go.th');
+	console.log('   เจ้าหน้าที่แผนงาน (Step 3):      planner1@hospital.go.th');
+	console.log('   เจ้าหน้าที่แผนงาน 2:             planner2@hospital.go.th');
+	console.log('');
+	console.log('   ── Procurement Unit (Execution phase) ──');
+	console.log('   หัวหน้าพัสดุ:                    procurement-head@hospital.go.th');
+	console.log('   เจ้าหน้าที่พัสดุ 1:              procurement1@hospital.go.th');
+	console.log('   เจ้าหน้าที่พัสดุ 2:              procurement2@hospital.go.th');
+	console.log('');
+	console.log('   ── Finance Unit ──');
+	console.log('   หัวหน้าการเงิน:                  finance-head@hospital.go.th');
+	console.log('   เจ้าหน้าที่การเงิน:              finance1@hospital.go.th');
+	console.log('');
+	console.log('   ── Committee Members ──');
+	console.log('   กรรมการ 1 (พยาบาล):              committee1@hospital.go.th');
+	console.log('   กรรมการ 2 (เภสัชกร):             committee2@hospital.go.th');
+	console.log('   กรรมการ 3 (IT):                  committee3@hospital.go.th');
 
 	// ──────────────────────────────────────────
 	// V2: Agency Settings (แผนกหลัก)

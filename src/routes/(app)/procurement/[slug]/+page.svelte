@@ -214,25 +214,208 @@
 							if (res.ok) window.location.reload();
 						}}
 					/>
-				{:else if round.status === 'BILL_CREATED' || round.status === 'SENT_TO_FINANCE'}
-					<!-- Bill submitted, show read-only summary -->
+				{:else if round.status === 'BILL_CREATED'}
+					<!-- Bill created, ready to send to finance -->
 					<div class="rounded-lg p-4" style="background: oklch(0.54 0.16 150 / 0.04); border: 1px solid oklch(0.54 0.16 150 / 0.15)">
-						<p class="text-sm font-medium" style="color: oklch(0.38 0.14 150)">
-							{round.status === 'SENT_TO_FINANCE' ? 'ส่งเอกสารไปฝ่ายการเงินแล้ว — รอการเงินดำเนินการ' : 'จัดทำเอกสารแล้ว — รอส่งการเงิน'}
-						</p>
-						{#if round.status === 'BILL_CREATED'}
-							<form method="POST" action="?/advanceRound" use:enhance class="mt-3">
-								<input type="hidden" name="round_id" value={round.id} />
-								<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium text-white" style="background: oklch(0.52 0.14 240)">ส่งการเงิน</button>
-							</form>
-						{/if}
+						<p class="text-sm font-medium" style="color: oklch(0.38 0.14 150)">จัดทำเอกสารแล้ว — รอส่งการเงิน</p>
+						<form method="POST" action="?/advanceRound" use:enhance class="mt-3">
+							<input type="hidden" name="round_id" value={round.id} />
+							<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium text-white" style="background: oklch(0.52 0.14 240)">ส่งการเงิน</button>
+						</form>
 					</div>
-				{:else if round.status !== 'BILL_PENDING'}
-					<!-- Finance phase: tracking -->
-					<div class="rounded-lg p-4" style="background: oklch(0.97 0.005 180); border: 1px solid oklch(0.92 0.005 180)">
-						<p class="mb-2 text-sm" style="color: oklch(0.4 0.02 180)">สถานะ: <strong>{statusLabels[round.status] ?? round.status}</strong></p>
+				{:else if round.status === 'SENT_TO_FINANCE'}
+					<!-- Step: การเงินรับทราบ -->
+					<div class="rounded-lg p-4" style="background: oklch(0.52 0.14 240 / 0.04); border: 1px solid oklch(0.52 0.14 240 / 0.12)">
+						<p class="mb-2 text-sm font-medium" style="color: oklch(0.35 0.1 240)">รอฝ่ายการเงินรับทราบเอกสาร</p>
+						<p class="mb-3 text-xs" style="color: oklch(0.5 0.06 240)">เอกสารส่งถึงฝ่ายการเงินแล้ว — การเงินต้องกดรับทราบเพื่อเริ่มนับ 90 วัน</p>
+						<form method="POST" action="?/advanceRound" use:enhance>
+							<input type="hidden" name="round_id" value={round.id} />
+							<input type="hidden" name="finance_seen_by" value="1" />
+							<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium text-white" style="background: oklch(0.52 0.14 240)">
+								รับทราบเอกสาร
+							</button>
+						</form>
+					</div>
+
+				{:else if round.status === 'FINANCE_SEEN'}
+					<!-- Step: วางฎีกาเบิกจ่าย -->
+					{@const planEstimated = Number(data.plan?.estimated_amount || 0)}
+					{@const winnerBidder = data.bidders?.find((b) => b.is_winner)}
+					{@const suggestedGross = winnerBidder ? Number(winnerBidder.proposed_price) : planEstimated}
+					<div class="rounded-lg p-4" style="background: oklch(0.54 0.16 150 / 0.04); border: 1px solid oklch(0.54 0.16 150 / 0.15)">
+						<h3 class="mb-1 text-sm font-semibold" style="color: oklch(0.3 0.1 150)">วางฎีกาเบิกจ่าย</h3>
+
+						<!-- Plan budget reference -->
+						<div class="mb-3 rounded-lg p-3" style="background: oklch(0.52 0.14 240 / 0.04); border: 1px solid oklch(0.52 0.14 240 / 0.1)">
+							<p class="text-xs font-medium" style="color: oklch(0.4 0.08 240)">ข้อมูลอ้างอิง</p>
+							<div class="mt-1.5" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px">
+								<p class="text-xs" style="color: oklch(0.5 0.04 240)">วงเงินแผนงาน:</p>
+								<p class="text-xs font-semibold text-right" style="color: oklch(0.35 0.1 240)">{formatBaht(planEstimated)}</p>
+								{#if winnerBidder}
+									<p class="text-xs" style="color: oklch(0.5 0.04 240)">ราคาผู้ชนะ:</p>
+									<p class="text-xs font-semibold text-right" style="color: oklch(0.35 0.12 150)">{formatBaht(winnerBidder.proposed_price)}</p>
+								{/if}
+							</div>
+						</div>
+
+						<form method="POST" action="?/generateDika" use:enhance class="space-y-3">
+							<!-- Gross amount -->
+							<div>
+								<label class="block text-xs font-medium" style="color: oklch(0.4 0.02 180)">ยอดเต็ม (บาท) <span style="color: oklch(0.58 0.2 25)">*</span></label>
+								<input name="gross_amount" type="number" step="0.01" required
+									value={suggestedGross > 0 ? suggestedGross.toFixed(2) : ''}
+									oninput={(e) => {
+										const form = e.currentTarget.closest('form');
+										if (!form) return;
+										const gross = Number(e.currentTarget.value) || 0;
+										const fine = Number((form.querySelector('[name=fine_amount]') as HTMLInputElement)?.value) || 0;
+										const pct = Number((form.querySelector('[name=tax_pct]') as HTMLInputElement)?.value) || 0;
+										const taxEl = form.querySelector('[name=tax_amount]') as HTMLInputElement;
+										const netEl = form.querySelector('[data-net]') as HTMLElement;
+										if (taxEl) taxEl.value = ((gross - fine) * pct / 100).toFixed(2);
+										if (netEl) netEl.textContent = formatBaht(gross - fine - Number(taxEl?.value || 0));
+									}}
+									class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none" style="border: 1px solid oklch(0.88 0.01 180)" />
+							</div>
+
+							<!-- Fine + Tax -->
+							<div class="grid grid-cols-3 gap-3">
+								<div>
+									<label class="block text-xs font-medium" style="color: oklch(0.4 0.02 180)">ค่าปรับ (บาท)</label>
+									<input name="fine_amount" type="number" step="0.01" value="0"
+										oninput={(e) => {
+											const form = e.currentTarget.closest('form');
+											if (!form) return;
+											const gross = Number((form.querySelector('[name=gross_amount]') as HTMLInputElement)?.value) || 0;
+											const fine = Number(e.currentTarget.value) || 0;
+											const pct = Number((form.querySelector('[name=tax_pct]') as HTMLInputElement)?.value) || 0;
+											const taxEl = form.querySelector('[name=tax_amount]') as HTMLInputElement;
+											const netEl = form.querySelector('[data-net]') as HTMLElement;
+											if (taxEl) taxEl.value = ((gross - fine) * pct / 100).toFixed(2);
+											if (netEl) netEl.textContent = formatBaht(gross - fine - Number(taxEl?.value || 0));
+										}}
+										class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none" style="border: 1px solid oklch(0.88 0.01 180)" />
+								</div>
+								<div>
+									<label class="block text-xs font-medium" style="color: oklch(0.4 0.02 180)">ภาษี (%)</label>
+									<input name="tax_pct" type="number" step="0.01" value="0" min="0" max="100"
+										oninput={(e) => {
+											const form = e.currentTarget.closest('form');
+											if (!form) return;
+											const gross = Number((form.querySelector('[name=gross_amount]') as HTMLInputElement)?.value) || 0;
+											const fine = Number((form.querySelector('[name=fine_amount]') as HTMLInputElement)?.value) || 0;
+											const pct = Number(e.currentTarget.value) || 0;
+											const taxEl = form.querySelector('[name=tax_amount]') as HTMLInputElement;
+											const netEl = form.querySelector('[data-net]') as HTMLElement;
+											if (taxEl) taxEl.value = ((gross - fine) * pct / 100).toFixed(2);
+											if (netEl) netEl.textContent = formatBaht(gross - fine - Number(taxEl?.value || 0));
+										}}
+										class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none" style="border: 1px solid oklch(0.88 0.01 180)" />
+								</div>
+								<div>
+									<label class="block text-xs font-medium" style="color: oklch(0.4 0.02 180)">ภาษี (บาท)</label>
+									<input name="tax_amount" type="number" step="0.01" value="0" readonly
+										class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none" style="border: 1px solid oklch(0.88 0.01 180); background: oklch(0.97 0.005 180); color: oklch(0.4 0.02 180)" />
+								</div>
+							</div>
+
+							<!-- Net amount preview -->
+							<div class="rounded-lg p-3" style="background: oklch(0.97 0.005 180); border: 1px solid oklch(0.92 0.005 180)">
+								<div style="display: flex; justify-content: space-between; align-items: center">
+									<span class="text-xs font-medium" style="color: oklch(0.5 0.02 180)">ยอดสุทธิ</span>
+									<span class="text-base font-bold" style="color: oklch(0.3 0.12 150)" data-net>{formatBaht(suggestedGross)}</span>
+								</div>
+							</div>
+
+							<!-- Bank accounts -->
+							<div>
+								<label class="block text-xs font-medium" style="color: oklch(0.4 0.02 180)">บัญชีจ่ายเงิน <span style="color: oklch(0.58 0.2 25)">*</span></label>
+								<CustomSelect
+									name="payment_bank_account_id"
+									required
+									placeholder="-- เลือกบัญชี --"
+									class="mt-1"
+									options={data.bankAccounts.filter((a) => !a.is_tax_pool).map((account) => ({ value: String(account.id), label: `${account.account_name} (${account.account_number})` }))}
+								/>
+							</div>
+							<div>
+								<label class="block text-xs font-medium" style="color: oklch(0.4 0.02 180)">บัญชีพักภาษี</label>
+								<CustomSelect
+									name="tax_pool_account_id"
+									placeholder="-- ไม่มี --"
+									class="mt-1"
+									options={[{ value: '', label: '-- ไม่มี --' }, ...data.bankAccounts.filter((a) => a.is_tax_pool).map((account) => ({ value: String(account.id), label: `${account.account_name} (${account.account_number})` }))]}
+								/>
+							</div>
+							<button type="submit" class="rounded-lg px-5 py-2 text-sm font-semibold text-white" style="background: oklch(0.54 0.16 150)">
+								สร้างฎีกาเบิกจ่าย
+							</button>
+						</form>
+					</div>
+
+				{:else if round.status === 'DIKA_CREATED'}
+					<!-- Step: รอ ผอ. อนุมัติฎีกา -->
+					<div class="rounded-lg p-4" style="background: oklch(0.52 0.14 240 / 0.04); border: 1px solid oklch(0.52 0.14 240 / 0.12)">
+						<p class="mb-2 text-sm font-medium" style="color: oklch(0.35 0.1 240)">สร้างฎีกาแล้ว — รอผู้อำนวยการอนุมัติ</p>
+						{#if data.dikaVoucher}
+							<p class="mb-3 text-xs" style="color: oklch(0.5 0.06 240)">ยอดสุทธิ: {formatBaht(data.dikaVoucher.net_amount)}</p>
+						{/if}
+						<form method="POST" action="?/advanceRound" use:enhance>
+							<input type="hidden" name="round_id" value={round.id} />
+							<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium text-white" style="background: oklch(0.52 0.14 240)">
+								ผอ. อนุมัติฎีกา
+							</button>
+						</form>
+					</div>
+
+				{:else if round.status === 'DIRECTOR_APPROVED'}
+					<!-- Step: จ่ายเงิน -->
+					<div class="rounded-lg p-4" style="background: oklch(0.54 0.16 150 / 0.04); border: 1px solid oklch(0.54 0.16 150 / 0.15)">
+						<p class="mb-2 text-sm font-medium" style="color: oklch(0.3 0.1 150)">ผอ. อนุมัติแล้ว — พร้อมจ่ายเงิน</p>
+						<form method="POST" action="?/advanceRound" use:enhance class="mt-3 space-y-3">
+							<input type="hidden" name="round_id" value={round.id} />
+							<input type="hidden" name="paid_by" value="1" />
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="block text-xs font-medium" style="color: oklch(0.4 0.02 180)">เลขที่เช็ค</label>
+									<input name="check_no" class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none" style="border: 1px solid oklch(0.88 0.01 180)" placeholder="CHK-XXXX" />
+								</div>
+								<div>
+									<label class="block text-xs font-medium" style="color: oklch(0.4 0.02 180)">วันที่เช็ค</label>
+									<input name="check_date" type="date" class="mt-1 block w-full rounded-lg px-3 py-2 text-sm outline-none" style="border: 1px solid oklch(0.88 0.01 180)" />
+								</div>
+							</div>
+							<button type="submit" class="rounded-lg px-5 py-2 text-sm font-semibold text-white" style="background: oklch(0.54 0.16 150)">
+								บันทึกจ่ายเงิน
+							</button>
+						</form>
+					</div>
+
+				{:else if round.status === 'PAID'}
+					<!-- Step: ประทับจ่าย -->
+					<div class="rounded-lg p-4" style="background: oklch(0.52 0.14 240 / 0.04); border: 1px solid oklch(0.52 0.14 240 / 0.12)">
+						<p class="mb-2 text-sm font-medium" style="color: oklch(0.35 0.1 240)">จ่ายเงินแล้ว — รอประทับจ่าย</p>
 						{#if round.check_no}
-							<p class="text-xs" style="color: oklch(0.55 0.02 180)">เช็คเลขที่: {round.check_no} | วันที่: {round.check_date}</p>
+							<p class="mb-3 text-xs" style="color: oklch(0.5 0.06 240)">เช็คเลขที่: {round.check_no} | วันที่: {round.check_date}</p>
+						{/if}
+						<form method="POST" action="?/advanceRound" use:enhance>
+							<input type="hidden" name="round_id" value={round.id} />
+							<input type="hidden" name="stamped_by" value="1" />
+							<button type="submit" class="rounded-lg px-4 py-2 text-sm font-medium text-white" style="background: oklch(0.52 0.14 240)">
+								ประทับจ่าย
+							</button>
+						</form>
+					</div>
+
+				{:else if round.status === 'STAMPED'}
+					<!-- Done -->
+					<div class="rounded-lg p-4" style="background: oklch(0.54 0.16 150 / 0.06); border: 1px solid oklch(0.54 0.16 150 / 0.2)">
+						<p class="text-sm font-semibold" style="color: oklch(0.38 0.14 150)">เสร็จสิ้น — ประทับจ่ายแล้ว</p>
+						{#if round.check_no}
+							<p class="mt-1 text-xs" style="color: oklch(0.5 0.06 150)">เช็คเลขที่: {round.check_no} | วันที่: {round.check_date}</p>
+						{/if}
+						{#if round.stamped_at}
+							<p class="mt-1 text-xs" style="color: oklch(0.5 0.06 150)">ประทับจ่ายเมื่อ: {formatThaiDateTime(round.stamped_at)}</p>
 						{/if}
 					</div>
 				{/if}
@@ -439,7 +622,7 @@
 									{/if}
 								</label>
 								<input type="file" name="pdf_file" accept=".pdf" required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-xs file:text-blue-600" />
-								<p class="mt-1 text-xs text-gray-400">รองรับไฟล์ PDF สูงสุด 20MB — ไฟล์จะถูกบันทึกเข้าระบบ</p>
+								<p class="mt-1 text-xs text-gray-400">รองรับไฟล์ PDF สูงสุด 5MB — ไฟล์จะถูกบันทึกเข้าระบบ</p>
 							</div>
 						{/if}
 

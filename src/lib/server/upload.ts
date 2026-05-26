@@ -1,6 +1,9 @@
 import { env } from '$env/dynamic/private';
+import { dev } from '$app/environment';
 
-const isLocalhost = env.NODE_ENV === 'localhost';
+function isLocalhost(): boolean {
+	return dev || env.NODE_ENV === 'localhost' || !env.S3_BUCKET;
+}
 
 /**
  * Upload a file — S3 on production, local filesystem on localhost.
@@ -12,7 +15,7 @@ export async function uploadFile(
 ): Promise<string> {
 	const buffer = Buffer.from(await file.arrayBuffer());
 
-	if (isLocalhost) {
+	if (isLocalhost()) {
 		return uploadLocal(buffer, path, file.name);
 	} else {
 		return uploadS3(buffer, path, file.type);
@@ -68,7 +71,6 @@ async function uploadS3(buffer: Buffer, path: string, contentType: string): Prom
 			Key: key,
 			Body: buffer,
 			ContentType: contentType,
-			// public-read if using S3 website hosting, otherwise use CloudFront/signed URLs
 		})
 	);
 
@@ -98,5 +100,5 @@ export function generateUploadPath(
  * Check if running on localhost
  */
 export function isLocal(): boolean {
-	return isLocalhost;
+	return isLocalhost();
 }
