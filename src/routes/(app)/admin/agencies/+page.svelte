@@ -104,7 +104,13 @@
 	<!-- Table -->
 	<div class="table-card">
 		<div class="table-scroll">
-			<table class="data-table">
+			<table class="data-table" style="table-layout: fixed;">
+				<colgroup>
+					<col style="width: 35%;" />
+					<col style="width: 20%;" />
+					<col style="width: 25%;" />
+					<col style="width: 20%;" />
+				</colgroup>
 				<thead>
 					<tr>
 						<th>ชื่อหน่วยงาน</th>
@@ -134,9 +140,9 @@
 							</tr>
 						{:else}
 							<tr>
-								<td class="name-cell">{agency.name}</td>
-								<td class="type-cell">{agency.agency_type ?? '-'}</td>
-								<td>{agency.province_name ?? '-'}</td>
+								<td class="name-cell truncate">{agency.name}</td>
+								<td class="type-cell truncate">{agency.agency_type ?? '-'}</td>
+								<td class="truncate">{agency.province_name ?? '-'}</td>
 								<td class="action-col">
 									<div class="row-actions">
 										<button onclick={() => startEdit(agency)} class="action-btn edit-btn">แก้ไข</button>
@@ -152,6 +158,14 @@
 						{/if}
 					{:else}
 						<tr><td colspan="4" class="empty-cell">ยังไม่มีหน่วยงานในระบบ</td></tr>
+					{/each}
+					{#each Array(Math.max(0, perPage - paginatedAgencies.length)) as _}
+						<tr>
+							<td>&nbsp;</td>
+							<td></td>
+							<td></td>
+							<td></td>
+						</tr>
 					{/each}
 				</tbody>
 			</table>

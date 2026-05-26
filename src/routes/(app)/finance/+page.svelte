@@ -46,6 +46,7 @@
 	const perPage = 5;
 
 	// Pagination states
+	let myTaskPage = $state(1);
 	let dikaPage = $state(1);
 	let taxPage = $state(1);
 	let vendorPage = $state(1);
@@ -85,12 +86,52 @@
 		return list;
 	});
 
+	// ── Sort state ──
+	type SortDir = 'asc' | 'desc' | null;
+	let dikaSortKey = $state<string | null>(null);
+	let dikaSortDir = $state<SortDir>(null);
+	let taxSortKey = $state<string | null>(null);
+	let taxSortDir = $state<SortDir>(null);
+	let vendorSortKey = $state<string | null>(null);
+	let vendorSortDir = $state<SortDir>(null);
+	let loanSortKey = $state<string | null>(null);
+	let loanSortDir = $state<SortDir>(null);
+
+	function sortArrow(key: string | null, dir: SortDir, col: string): string {
+		if (key !== col) return '';
+		return dir === 'asc' ? ' ↑' : dir === 'desc' ? ' ↓' : '';
+	}
+
+	function toggleSort(current: { key: string | null; dir: SortDir }, col: string): { key: string; dir: SortDir } {
+		if (current.key !== col) return { key: col, dir: 'asc' };
+		if (current.dir === 'asc') return { key: col, dir: 'desc' };
+		return { key: col, dir: null };
+	}
+
+	function sortItems<T>(items: T[], key: string | null, dir: SortDir): T[] {
+		if (!key || !dir) return items;
+		return [...items].sort((a: any, b: any) => {
+			let va = a[key], vb = b[key];
+			if (va == null) va = '';
+			if (vb == null) vb = '';
+			const numA = Number(va), numB = Number(vb);
+			if (!isNaN(numA) && !isNaN(numB)) return dir === 'asc' ? numA - numB : numB - numA;
+			return dir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+		});
+	}
+
 	// Derived data
-	let paginatedDika = $derived(
-		fyFilteredDika.slice((dikaPage - 1) * perPage, dikaPage * perPage)
+	const myTaskPerPage = 5;
+	let paginatedMyTasks = $derived(
+		myDikaTasks.slice((myTaskPage - 1) * myTaskPerPage, myTaskPage * myTaskPerPage)
 	);
+	let sortedDika = $derived(sortItems(fyFilteredDika, dikaSortKey, dikaSortDir));
+	let paginatedDika = $derived(
+		sortedDika.slice((dikaPage - 1) * perPage, dikaPage * perPage)
+	);
+	let sortedTax = $derived(sortItems(fyFilteredTax, taxSortKey, taxSortDir));
 	let paginatedTax = $derived(
-		fyFilteredTax.slice((taxPage - 1) * perPage, taxPage * perPage)
+		sortedTax.slice((taxPage - 1) * perPage, taxPage * perPage)
 	);
 	let filteredVendors = $derived(
 		data.vendors.filter((v: any) => {
@@ -102,10 +143,12 @@
 			return true;
 		})
 	);
+	let sortedVendors = $derived(sortItems(filteredVendors, vendorSortKey, vendorSortDir));
 	let paginatedVendors = $derived(
-		filteredVendors.slice((vendorPage - 1) * perPage, vendorPage * perPage)
+		sortedVendors.slice((vendorPage - 1) * perPage, vendorPage * perPage)
 	);
-	let filteredLoans = $derived(fyFilteredLoans);
+	let sortedLoans = $derived(sortItems(fyFilteredLoans, loanSortKey, loanSortDir));
+	let filteredLoans = $derived(sortedLoans);
 	let paginatedLoans = $derived(
 		filteredLoans.slice((loanPage - 1) * perPage, loanPage * perPage)
 	);
@@ -213,8 +256,8 @@
 					<h3 class="text-sm font-semibold" style="color: oklch(0.3 0.02 180);">งานของฉัน</h3>
 					<span class="rounded-full px-2 py-0.5 text-xs font-semibold" style="background: oklch(0.52 0.14 240); color: white;">{myDikaTasks.length}</span>
 				</div>
-				<div class="space-y-2">
-					{#each myDikaTasks as task}
+				<div class="space-y-2" style="min-height: {myTaskPerPage * 56}px">
+					{#each paginatedMyTasks as task}
 						<button class="my-task-card" onclick={() => { selectedDika = task; payAccountId = String(task.payment_bank_account_id || ''); payTaxAccountId = String(task.tax_pool_account_id || ''); }}>
 							<div class="flex items-center gap-3 flex-1 min-w-0">
 								{#if task.status === 'PENDING_EXAMINE'}
@@ -250,49 +293,54 @@
 						</button>
 					{/each}
 				</div>
+				{#if myDikaTasks.length > myTaskPerPage}
+					<div class="mt-3">
+						<Pagination totalItems={myDikaTasks.length} bind:currentPage={myTaskPage} perPage={myTaskPerPage} />
+					</div>
+				{/if}
 			</div>
 		{/if}
 
 		<div class="mt-1.5 overflow-hidden rounded-xl border bg-white shadow-sm">
-			<table class="w-full text-left text-sm">
-				<thead class="border-b bg-gray-50">
+			<table class="w-full text-left text-sm" style="table-layout: fixed">
+				<thead class="border-b" style="background: oklch(0.97 0.005 180)">
 					<tr>
-						<th class="px-4 py-3 font-medium text-gray-600">#</th>
-						<th class="px-4 py-3 font-medium text-gray-600">ผู้รับจ้าง</th>
-						<th class="px-4 py-3 font-medium text-gray-600">แผนงาน</th>
-						<th class="px-4 py-3 font-medium text-gray-600 text-right">ยอดสุทธิ (บาท)</th>
-						<th class="px-4 py-3 font-medium text-gray-600">ขั้นตอน</th>
-						<th class="px-4 py-3 font-medium text-gray-600">จัดการ</th>
+						<th style="width: 50px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: dikaSortKey, dir: dikaSortDir }, 'id'); dikaSortKey = r.key; dikaSortDir = r.dir; dikaPage = 1; }}># {sortArrow(dikaSortKey, dikaSortDir, 'id')}</th>
+						<th style="width: 17%; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: dikaSortKey, dir: dikaSortDir }, 'vendor_name'); dikaSortKey = r.key; dikaSortDir = r.dir; dikaPage = 1; }}>ผู้รับจ้าง {sortArrow(dikaSortKey, dikaSortDir, 'vendor_name')}</th>
+						<th style="color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: dikaSortKey, dir: dikaSortDir }, 'plan_title'); dikaSortKey = r.key; dikaSortDir = r.dir; dikaPage = 1; }}>แผนงาน {sortArrow(dikaSortKey, dikaSortDir, 'plan_title')}</th>
+						<th style="width: 130px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium text-right cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: dikaSortKey, dir: dikaSortDir }, 'net_amount'); dikaSortKey = r.key; dikaSortDir = r.dir; dikaPage = 1; }}>ยอดสุทธิ {sortArrow(dikaSortKey, dikaSortDir, 'net_amount')}</th>
+						<th style="width: 120px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: dikaSortKey, dir: dikaSortDir }, 'status'); dikaSortKey = r.key; dikaSortDir = r.dir; dikaPage = 1; }}>ขั้นตอน {sortArrow(dikaSortKey, dikaSortDir, 'status')}</th>
+						<th style="width: 90px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium">จัดการ</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
 					{#each paginatedDika as dika}
-						<tr class="hover:bg-gray-50 cursor-pointer" onclick={() => { selectedDika = dika; payAccountId = String(dika.payment_bank_account_id || ''); payTaxAccountId = String(dika.tax_pool_account_id || ''); }}>
-							<td class="px-4 py-3 font-mono text-gray-500">{dika.id}</td>
-							<td class="px-4 py-3">{dika.vendor_name}</td>
-							<td class="px-4 py-3 text-sm">{dika.plan_title}</td>
-							<td class="px-4 py-3 text-right font-mono">{formatNumber(dika.net_amount)}</td>
-							<td class="px-4 py-3">
+						<tr class="hover:bg-gray-50 cursor-pointer" style="height: 45px" onclick={() => { selectedDika = dika; payAccountId = String(dika.payment_bank_account_id || ''); payTaxAccountId = String(dika.tax_pool_account_id || ''); }}>
+							<td class="px-4 py-3 font-mono text-gray-500 overflow-hidden">{dika.id}</td>
+							<td class="px-4 py-3 overflow-hidden text-ellipsis whitespace-nowrap">{dika.vendor_name}</td>
+							<td class="px-4 py-3 text-sm overflow-hidden text-ellipsis whitespace-nowrap">{dika.plan_title}</td>
+							<td class="px-4 py-3 text-right font-mono overflow-hidden">{formatNumber(dika.net_amount)}</td>
+							<td class="px-4 py-3 overflow-hidden">
 								{#if dika.status === 'PENDING_EXAMINE'}
 									<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style="background: oklch(0.62 0.18 60 / 0.1); color: oklch(0.48 0.14 60);">
 										<span class="inline-block h-1.5 w-1.5 rounded-full" style="background: oklch(0.62 0.18 60);"></span>
-										1. รอตรวจสอบ
+										รอตรวจสอบ
 									</span>
 								{:else if dika.status === 'EXAMINED'}
 									<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style="background: oklch(0.52 0.14 240 / 0.1); color: oklch(0.42 0.12 240);">
 										<span class="inline-block h-1.5 w-1.5 rounded-full" style="background: oklch(0.52 0.14 240);"></span>
-										2. รออนุมัติ
+										รออนุมัติ
 									</span>
 								{:else if dika.status === 'APPROVED'}
 									<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style="background: oklch(0.54 0.16 150 / 0.1); color: oklch(0.38 0.14 150);">
 										<span class="inline-block h-1.5 w-1.5 rounded-full" style="background: oklch(0.54 0.16 150);"></span>
-										3. รอจ่ายเงิน
+										รอจ่ายเงิน
 									</span>
 								{:else}
 									<StatusBadge status={dika.status} />
 								{/if}
 							</td>
-							<td class="px-4 py-3">
+							<td class="px-4 py-3 overflow-hidden">
 								<button onclick={() => { selectedDika = dika; payAccountId = String(dika.payment_bank_account_id || ''); payTaxAccountId = String(dika.tax_pool_account_id || ''); }}
 									class="rounded px-2 py-1 text-xs font-medium" style="color: oklch(0.42 0.12 240); background: oklch(0.52 0.14 240 / 0.06);">
 									ดูรายละเอียด
@@ -300,13 +348,14 @@
 							</td>
 						</tr>
 					{:else}
-						<tr>
-							<td colspan="6" class="px-4 py-8 text-center text-gray-500">ไม่มีฎีกาเบิกจ่าย</td>
-						</tr>
+						<tr style="height: 45px"><td colspan="6" class="px-4 py-3 text-center text-gray-500">ไม่มีฎีกาเบิกจ่าย</td></tr>
+					{/each}
+					{#each Array(Math.max(0, perPage - paginatedDika.length)) as _}
+						<tr style="height: 45px"><td class="px-4 py-3">&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>
 					{/each}
 				</tbody>
 			</table>
-			<Pagination totalItems={fyFilteredDika.length} bind:currentPage={dikaPage} {perPage} />
+			<Pagination totalItems={sortedDika.length} bind:currentPage={dikaPage} {perPage} />
 		</div>
 	{/if}
 
@@ -376,36 +425,36 @@
 			{/if}
 		</div>
 		<div class="mt-1.5 overflow-hidden rounded-xl border bg-white shadow-sm">
-			<table class="w-full text-left text-sm">
-				<thead class="border-b bg-gray-50">
+						<table class="w-full text-left text-sm" style="table-layout: fixed">
+				<thead class="border-b" style="background: oklch(0.97 0.005 180)">
 					<tr>
-						<th class="px-4 py-3 font-medium text-gray-600">#</th>
-						<th class="px-4 py-3 font-medium text-gray-600">ประเภท</th>
-						<th class="px-4 py-3 font-medium text-gray-600">วัตถุประสงค์</th>
-						<th class="px-4 py-3 font-medium text-gray-600 text-right">จำนวนเงิน</th>
-						<th class="px-4 py-3 font-medium text-gray-600 text-right">ชำระคืนแล้ว</th>
-						<th class="px-4 py-3 font-medium text-gray-600">กำหนดคืน</th>
-						<th class="px-4 py-3 font-medium text-gray-600">สถานะ</th>
-						<th class="px-4 py-3 font-medium text-gray-600">จัดการ</th>
+						<th style="width: 50px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: loanSortKey, dir: loanSortDir }, 'id'); loanSortKey = r.key; loanSortDir = r.dir; loanPage = 1; }}># {sortArrow(loanSortKey, loanSortDir, 'id')}</th>
+						<th style="width: 120px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: loanSortKey, dir: loanSortDir }, 'loan_type'); loanSortKey = r.key; loanSortDir = r.dir; loanPage = 1; }}>ประเภท {sortArrow(loanSortKey, loanSortDir, 'loan_type')}</th>
+						<th style="color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium">วัตถุประสงค์</th>
+						<th style="width: 110px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium text-right cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: loanSortKey, dir: loanSortDir }, 'amount'); loanSortKey = r.key; loanSortDir = r.dir; loanPage = 1; }}>จำนวนเงิน {sortArrow(loanSortKey, loanSortDir, 'amount')}</th>
+						<th style="width: 110px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium text-right cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: loanSortKey, dir: loanSortDir }, 'repaid_amount'); loanSortKey = r.key; loanSortDir = r.dir; loanPage = 1; }}>ชำระคืนแล้ว {sortArrow(loanSortKey, loanSortDir, 'repaid_amount')}</th>
+						<th style="width: 100px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: loanSortKey, dir: loanSortDir }, 'due_date'); loanSortKey = r.key; loanSortDir = r.dir; loanPage = 1; }}>กำหนดคืน {sortArrow(loanSortKey, loanSortDir, 'due_date')}</th>
+						<th style="width: 90px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: loanSortKey, dir: loanSortDir }, 'status'); loanSortKey = r.key; loanSortDir = r.dir; loanPage = 1; }}>สถานะ {sortArrow(loanSortKey, loanSortDir, 'status')}</th>
+						<th style="width: 80px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium">จัดการ</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
 					{#each paginatedLoans as loan}
-						<tr class="hover:bg-gray-50">
-							<td class="px-4 py-3 font-mono text-gray-500">{loan.id}</td>
-							<td class="px-4 py-3">
+						<tr class="hover:bg-gray-50" style="height: 45px">
+							<td class="px-4 py-3 font-mono text-gray-500 overflow-hidden">{loan.id}</td>
+							<td class="px-4 py-3 overflow-hidden">
 								{#if loan.loan_type === 'TAX_POOL'}
 									<span class="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">ยืมจากภาษี</span>
 								{:else}
 									<span class="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">ยืมข้ามหน่วยงาน</span>
 								{/if}
 							</td>
-							<td class="px-4 py-3">{loan.purpose}</td>
-							<td class="px-4 py-3 text-right font-mono">{formatNumber(loan.amount)}</td>
-							<td class="px-4 py-3 text-right font-mono">{formatNumber(loan.repaid_amount)}</td>
-							<td class="px-4 py-3">{loan.due_date || '-'}</td>
-							<td class="px-4 py-3"><StatusBadge status={loan.displayStatus ?? loan.status} /></td>
-							<td class="px-4 py-3">
+							<td class="px-4 py-3 overflow-hidden text-ellipsis whitespace-nowrap">{loan.purpose}</td>
+							<td class="px-4 py-3 text-right font-mono overflow-hidden">{formatNumber(loan.amount)}</td>
+							<td class="px-4 py-3 text-right font-mono overflow-hidden">{formatNumber(loan.repaid_amount)}</td>
+							<td class="px-4 py-3 overflow-hidden text-ellipsis whitespace-nowrap">{loan.due_date || '-'}</td>
+							<td class="px-4 py-3 overflow-hidden"><StatusBadge status={loan.displayStatus ?? loan.status} /></td>
+							<td class="px-4 py-3 overflow-hidden">
 								{#if loan.status === 'PENDING' && canManageFinance}
 									<div class="flex gap-1">
 										<form method="POST" action="?/approveLoan" use:enhance={() => { return async ({ update }) => { await update(); }; }}>
@@ -429,9 +478,12 @@
 							</td>
 						</tr>
 					{:else}
-						<tr>
-							<td colspan="8" class="px-4 py-8 text-center text-gray-500">ไม่มีรายการยืมเงิน</td>
+						<tr style="height: 45px">
+							<td colspan="8" class="px-4 py-3 text-center text-gray-500">ไม่มีรายการยืมเงิน</td>
 						</tr>
+					{/each}
+					{#each Array(Math.max(0, perPage - paginatedLoans.length)) as _}
+						<tr style="height: 45px"><td class="px-4 py-3">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
 					{/each}
 				</tbody>
 			</table>
@@ -454,7 +506,7 @@
 					<option value={String(vt.id)}>{vt.name}</option>
 				{/each}
 			</select>
-			<span class="text-sm text-gray-500">{filteredVendors.length} รายการ</span>
+			<span class="text-sm" style="color: oklch(0.5 0.02 180)">{sortedVendors.length} รายการ</span>
 			{#if canManageVendors}
 				<div class="ml-auto flex gap-2">
 					<button onclick={() => (showVendorTypeModal = true)} class="rounded-lg border px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50" style="border-color: oklch(0.82 0.015 180);">จัดการประเภท</button>
@@ -464,27 +516,27 @@
 			{/if}
 		</div>
 		<div class="mt-2 overflow-hidden rounded-xl border bg-white shadow-sm">
-			<table class="w-full text-left text-sm">
-				<thead class="border-b bg-gray-50">
+						<table class="w-full text-left text-sm" style="table-layout: fixed">
+				<thead class="border-b" style="background: oklch(0.97 0.005 180)">
 					<tr>
-						<th class="px-4 py-3 font-medium text-gray-600">#</th>
-						<th class="px-4 py-3 font-medium text-gray-600">ชื่อบริษัท/ร้านค้า</th>
-						<th class="px-4 py-3 font-medium text-gray-600">ประเภท</th>
-						<th class="px-4 py-3 font-medium text-gray-600">เลขผู้เสียภาษี</th>
-						<th class="px-4 py-3 font-medium text-gray-600">ผู้ติดต่อ</th>
-						<th class="px-4 py-3 font-medium text-gray-600">เบอร์โทร</th>
-						<th class="px-4 py-3 font-medium text-gray-600">อีเมล</th>
+						<th style="width: 45px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: vendorSortKey, dir: vendorSortDir }, 'id'); vendorSortKey = r.key; vendorSortDir = r.dir; vendorPage = 1; }}># {sortArrow(vendorSortKey, vendorSortDir, 'id')}</th>
+						<th style="color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: vendorSortKey, dir: vendorSortDir }, 'company_name'); vendorSortKey = r.key; vendorSortDir = r.dir; vendorPage = 1; }}>ชื่อบริษัท/ร้านค้า {sortArrow(vendorSortKey, vendorSortDir, 'company_name')}</th>
+						<th style="width: 100px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: vendorSortKey, dir: vendorSortDir }, 'vendor_type'); vendorSortKey = r.key; vendorSortDir = r.dir; vendorPage = 1; }}>ประเภท {sortArrow(vendorSortKey, vendorSortDir, 'vendor_type')}</th>
+						<th style="width: 130px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: vendorSortKey, dir: vendorSortDir }, 'tax_id'); vendorSortKey = r.key; vendorSortDir = r.dir; vendorPage = 1; }}>เลขผู้เสียภาษี {sortArrow(vendorSortKey, vendorSortDir, 'tax_id')}</th>
+						<th style="width: 100px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium">ผู้ติดต่อ</th>
+						<th style="width: 100px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium">เบอร์โทร</th>
+						<th style="width: 130px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium">อีเมล</th>
 						{#if canManageVendors}
-							<th class="px-4 py-3 font-medium text-gray-600">จัดการ</th>
+							<th style="width: 80px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium">จัดการ</th>
 						{/if}
 					</tr>
 				</thead>
 				<tbody class="divide-y">
 					{#each paginatedVendors as v}
-						<tr class="hover:bg-gray-50">
-							<td class="px-4 py-3 font-mono text-gray-500">{v.id}</td>
-							<td class="px-4 py-3 font-medium text-gray-900">{v.company_name}</td>
-							<td class="px-4 py-3">
+						<tr class="hover:bg-gray-50" style="height: 45px">
+							<td class="px-4 py-3 font-mono text-gray-500 overflow-hidden">{v.id}</td>
+							<td class="px-4 py-3 font-medium text-gray-900 overflow-hidden text-ellipsis whitespace-nowrap">{v.company_name}</td>
+							<td class="px-4 py-3 overflow-hidden">
 								{#if v.vendor_type_name}
 									<span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{v.vendor_type_name}</span>
 								{:else if v.vendor_type}
@@ -493,12 +545,12 @@
 									<span class="text-gray-400">-</span>
 								{/if}
 							</td>
-							<td class="px-4 py-3 font-mono">{v.tax_id}</td>
-							<td class="px-4 py-3">{v.contact_person || '-'}</td>
-							<td class="px-4 py-3">{v.contact_phone || '-'}</td>
-							<td class="px-4 py-3">{v.contact_email || '-'}</td>
+							<td class="px-4 py-3 font-mono overflow-hidden text-ellipsis whitespace-nowrap">{v.tax_id}</td>
+							<td class="px-4 py-3 overflow-hidden text-ellipsis whitespace-nowrap">{v.contact_person || '-'}</td>
+							<td class="px-4 py-3 overflow-hidden text-ellipsis whitespace-nowrap">{v.contact_phone || '-'}</td>
+							<td class="px-4 py-3 overflow-hidden text-ellipsis whitespace-nowrap">{v.contact_email || '-'}</td>
 							{#if canManageVendors}
-								<td class="px-4 py-3">
+								<td class="px-4 py-3 overflow-hidden">
 									<div class="flex gap-1">
 										<button onclick={() => (editingVendor = v)} class="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">แก้ไข</button>
 										{#if data.user.is_super_admin}
@@ -512,47 +564,53 @@
 							{/if}
 						</tr>
 					{:else}
-						<tr>
-							<td colspan={canManageVendors ? 8 : 7} class="px-4 py-8 text-center text-gray-500">ไม่พบผู้ประกอบการ</td>
+						<tr style="height: 45px">
+							<td colspan={canManageVendors ? 8 : 7} class="px-4 py-3 text-center text-gray-500">ไม่พบผู้ประกอบการ</td>
 						</tr>
+					{/each}
+					{#each Array(Math.max(0, perPage - paginatedVendors.length)) as _}
+						<tr style="height: 45px"><td class="px-4 py-3">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td>{#if canManageVendors}<td></td>{/if}</tr>
 					{/each}
 				</tbody>
 			</table>
-			<Pagination totalItems={filteredVendors.length} bind:currentPage={vendorPage} {perPage} />
+			<Pagination totalItems={sortedVendors.length} bind:currentPage={vendorPage} {perPage} />
 		</div>
 	{/if}
 
 	{#if activeTab === 'tax'}
 		<div class="mt-1.5 overflow-hidden rounded-xl border bg-white shadow-sm">
-			<table class="w-full text-left text-sm">
-				<thead class="border-b bg-gray-50">
+						<table class="w-full text-left text-sm" style="table-layout: fixed">
+				<thead class="border-b" style="background: oklch(0.97 0.005 180)">
 					<tr>
-						<th class="px-4 py-3 font-medium text-gray-600">เลขผู้เสียภาษี</th>
-						<th class="px-4 py-3 font-medium text-gray-600">แบบ</th>
-						<th class="px-4 py-3 font-medium text-gray-600 text-right">ฐานภาษี (บาท)</th>
-						<th class="px-4 py-3 font-medium text-gray-600 text-right">ภาษี (บาท)</th>
-						<th class="px-4 py-3 font-medium text-gray-600">สถานะ</th>
+						<th style="width: 140px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: taxSortKey, dir: taxSortDir }, 'tax_id'); taxSortKey = r.key; taxSortDir = r.dir; taxPage = 1; }}>เลขผู้เสียภาษี {sortArrow(taxSortKey, taxSortDir, 'tax_id')}</th>
+						<th style="width: 100px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: taxSortKey, dir: taxSortDir }, 'tax_form'); taxSortKey = r.key; taxSortDir = r.dir; taxPage = 1; }}>แบบ {sortArrow(taxSortKey, taxSortDir, 'tax_form')}</th>
+						<th style="color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium text-right cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: taxSortKey, dir: taxSortDir }, 'base_amount'); taxSortKey = r.key; taxSortDir = r.dir; taxPage = 1; }}>ฐานภาษี (บาท) {sortArrow(taxSortKey, taxSortDir, 'base_amount')}</th>
+						<th style="color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium text-right cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: taxSortKey, dir: taxSortDir }, 'tax_amount'); taxSortKey = r.key; taxSortDir = r.dir; taxPage = 1; }}>ภาษี (บาท) {sortArrow(taxSortKey, taxSortDir, 'tax_amount')}</th>
+						<th style="width: 100px; color: oklch(0.45 0.02 180)" class="px-4 py-3 font-medium cursor-pointer select-none" onclick={() => { const r = toggleSort({ key: taxSortKey, dir: taxSortDir }, 'status'); taxSortKey = r.key; taxSortDir = r.dir; taxPage = 1; }}>สถานะ {sortArrow(taxSortKey, taxSortDir, 'status')}</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
 					{#each paginatedTax as tax}
-						<tr class="hover:bg-gray-50">
-							<td class="px-4 py-3 font-mono">{tax.tax_id}</td>
-							<td class="px-4 py-3">{tax.tax_form_type}</td>
-							<td class="px-4 py-3 text-right font-mono">{formatNumber(tax.tax_base_amount)}</td>
-							<td class="px-4 py-3 text-right font-mono">{formatNumber(tax.tax_amount)}</td>
-							<td class="px-4 py-3">
+						<tr class="hover:bg-gray-50" style="height: 45px">
+							<td class="px-4 py-3 font-mono overflow-hidden text-ellipsis whitespace-nowrap">{tax.tax_id}</td>
+							<td class="px-4 py-3 overflow-hidden text-ellipsis whitespace-nowrap">{tax.tax_form_type}</td>
+							<td class="px-4 py-3 text-right font-mono overflow-hidden">{formatNumber(tax.tax_base_amount)}</td>
+							<td class="px-4 py-3 text-right font-mono overflow-hidden">{formatNumber(tax.tax_amount)}</td>
+							<td class="px-4 py-3 overflow-hidden">
 								<StatusBadge status={tax.status} />
 							</td>
 						</tr>
 					{:else}
-						<tr>
-							<td colspan="5" class="px-4 py-8 text-center text-gray-500">ไม่มีข้อมูลภาษี</td>
+						<tr style="height: 45px">
+							<td colspan="5" class="px-4 py-3 text-center text-gray-500">ไม่มีข้อมูลภาษี</td>
 						</tr>
+					{/each}
+					{#each Array(Math.max(0, perPage - paginatedTax.length)) as _}
+						<tr style="height: 45px"><td class="px-4 py-3">&nbsp;</td><td></td><td></td><td></td><td></td></tr>
 					{/each}
 				</tbody>
 			</table>
-			<Pagination totalItems={fyFilteredTax.length} bind:currentPage={taxPage} {perPage} />
+			<Pagination totalItems={sortedTax.length} bind:currentPage={taxPage} {perPage} />
 		</div>
 	{/if}
 </div>

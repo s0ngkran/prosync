@@ -85,7 +85,12 @@
 
 	<!-- Table -->
 	<div class="table-card">
-		<table class="data-table">
+		<table class="data-table" style="table-layout: fixed;">
+			<colgroup>
+				<col style="width: 80px;" />
+				<col style="width: auto;" />
+				<col style="width: 160px;" />
+			</colgroup>
 			<thead>
 				<tr>
 					<th class="id-col">รหัส</th>
@@ -111,7 +116,7 @@
 							<td></td>
 						{:else if deletingId === province.id}
 							<td class="id-col id-cell">{province.id}</td>
-							<td class="delete-confirm">ยืนยันลบ "{province.name}" ?</td>
+							<td class="delete-confirm truncate">ยืนยันลบ "{province.name}" ?</td>
 							<td class="action-col">
 								<form method="POST" action="?/delete" use:enhance={() => {
 									return async ({ update }) => { await update(); cancelDelete(); };
@@ -123,7 +128,7 @@
 							</td>
 						{:else}
 							<td class="id-col id-cell">{province.id}</td>
-							<td class="name-cell">{province.name}</td>
+							<td class="name-cell truncate">{province.name}</td>
 							<td class="action-col">
 								<div class="row-actions">
 									<button onclick={() => startEdit(province.id, province.name)} class="action-btn edit-btn">แก้ไข</button>
@@ -134,6 +139,13 @@
 					</tr>
 				{:else}
 					<tr><td colspan="3" class="empty-cell">ยังไม่มีข้อมูลจังหวัด</td></tr>
+				{/each}
+				{#each Array(Math.max(0, perPage - paginatedProvinces.length)) as _}
+					<tr>
+						<td>&nbsp;</td>
+						<td></td>
+						<td></td>
+					</tr>
 				{/each}
 			</tbody>
 		</table>

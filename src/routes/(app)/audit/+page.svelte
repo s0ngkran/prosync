@@ -260,6 +260,11 @@
 			{:else}
 				<div class="empty-records">ไม่มีข้อมูลประวัติการเปลี่ยนแปลง</div>
 			{/each}
+			{#each Array(Math.max(0, perPage - paginatedRecords.length)) as _}
+				<div class="record-card filler-card">
+					<div class="record-row filler-row">&nbsp;</div>
+				</div>
+			{/each}
 		</div>
 
 		<!-- Pagination -->
@@ -340,6 +345,8 @@
 	.detail-json { margin: 0; padding: 14px; border-radius: 10px; background: oklch(0.97 0.005 180); font-size: 0.75rem; color: oklch(0.35 0.02 180); overflow-x: auto; font-family: 'Fira Code', monospace; line-height: 1.5; max-height: 300px; }
 
 	.empty-records { text-align: center; padding: 48px 24px; font-size: 0.9375rem; color: oklch(0.55 0.02 180); background: oklch(0.98 0.005 180); border: 1px solid oklch(0.92 0.005 180); border-radius: 14px; }
+	.filler-card { visibility: hidden; pointer-events: none; }
+	.filler-row { padding: 14px 18px; }
 
 	/* Empty state */
 	.empty-state { display: flex; flex-direction: column; align-items: center; padding: 60px 24px; text-align: center; }

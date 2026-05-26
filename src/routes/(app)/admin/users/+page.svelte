@@ -85,7 +85,14 @@
 
 	<!-- Users Table -->
 	<div class="mt-4 overflow-hidden rounded-xl border bg-white shadow-sm">
-		<table class="w-full text-left text-sm">
+		<table class="w-full text-left text-sm" style="table-layout: fixed;">
+			<colgroup>
+				<col style="width: 22%;" />
+				<col style="width: 18%;" />
+				<col style="width: 20%;" />
+				<col style="width: 22%;" />
+				<col style="width: 18%;" />
+			</colgroup>
 			<thead class="border-b bg-gray-50">
 				<tr>
 					<th class="px-4 py-3 font-medium text-gray-600">ชื่อ-สกุล</th>
@@ -99,21 +106,21 @@
 				{#each paginatedUsers as user}
 					{@const assignments = getUserAssignments(user.id)}
 					<tr class="hover:bg-gray-50">
-						<td class="px-4 py-3">
-							<div class="font-medium text-gray-900">
+						<td class="px-4 py-3 truncate">
+							<div class="font-medium text-gray-900 truncate">
 								{user.position || ''} {user.name}
 								{#if user.is_super_admin}
 									<span class="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700">SA</span>
 								{/if}
 							</div>
-							<div class="text-xs text-gray-500">{user.position_rank || ''}</div>
+							<div class="text-xs text-gray-500 truncate">{user.position_rank || ''}</div>
 						</td>
-						<td class="px-4 py-3 font-mono text-xs text-gray-600">{user.id_card}</td>
-						<td class="px-4 py-3 text-gray-600">{user.agency_name || '-'}</td>
+						<td class="px-4 py-3 font-mono text-xs text-gray-600 truncate">{user.id_card}</td>
+						<td class="px-4 py-3 text-gray-600 truncate">{user.agency_name || '-'}</td>
 						<td class="px-4 py-3">
 							{#if assignments.length > 0}
 								{#each assignments as a}
-									<div class="text-xs">
+									<div class="text-xs truncate">
 										<span class="font-medium text-blue-700">{a.role_name}</span>
 										<span class="text-gray-500"> @ {a.org_unit_name}</span>
 										{#if a.is_primary_unit}
@@ -153,6 +160,15 @@
 								</form>
 							</div>
 						</td>
+					</tr>
+				{/each}
+				{#each Array(Math.max(0, perPage - paginatedUsers.length)) as _}
+					<tr>
+						<td class="px-4 py-3">&nbsp;</td>
+						<td class="px-4 py-3"></td>
+						<td class="px-4 py-3"></td>
+						<td class="px-4 py-3"></td>
+						<td class="px-4 py-3"></td>
 					</tr>
 				{/each}
 			</tbody>

@@ -127,7 +127,15 @@
 
 		<!-- Table -->
 		<div class="table-scroll">
-			<table class="data-table">
+			<table class="data-table" style="table-layout: fixed;">
+				<colgroup>
+					<col style="width: 15%;" />
+					<col style="width: 25%;" />
+					<col style="width: 12%;" />
+					<col style="width: 15%;" />
+					<col style="width: 15%;" />
+					<col style="width: 18%;" />
+				</colgroup>
 				<thead>
 					<tr>
 						<th>หมวดหมู่</th>
@@ -141,9 +149,9 @@
 				<tbody>
 					{#each paginatedPrices as price}
 						<tr>
-							<td class="category-cell">{price.category_name}</td>
-							<td class="item-cell">{price.item_name}</td>
-							<td>{price.unit_name || '-'}</td>
+							<td class="category-cell truncate">{price.category_name}</td>
+							<td class="item-cell truncate">{price.item_name}</td>
+							<td class="truncate">{price.unit_name || '-'}</td>
 							<td class="num price-cell">{formatBaht(price.price)}</td>
 							<td class="date-cell">{formatThaiDate(price.effective_date)}</td>
 							<td class="action-col">
@@ -165,6 +173,16 @@
 									ยังไม่มีข้อมูลราคากลางในจังหวัด{data.selectedProvinceName}
 								{/if}
 							</td>
+						</tr>
+					{/each}
+					{#each Array(Math.max(0, perPage - paginatedPrices.length)) as _}
+						<tr>
+							<td>&nbsp;</td>
+							<td></td>
+							<td></td>
+							<td></td>
+							<td></td>
+							<td></td>
 						</tr>
 					{/each}
 				</tbody>
