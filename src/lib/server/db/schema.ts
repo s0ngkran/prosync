@@ -513,7 +513,7 @@ export const projectItems = pgTable('project_items', {
 		.notNull()
 		.references(() => documents.id),
 	item_name: varchar('item_name', { length: 255 }).notNull(),
-	item_type: varchar('item_type', { length: 20 }).notNull(), // 'pFinance' | 'pParcel'
+	item_type: varchar('item_type', { length: 20 }).notNull(), // 'type4_iFinance' | 'type1_nParcel' | 'type2_iParcelUtil' | 'type3_iParcel'
 	estimated_amount: numeric('estimated_amount', { precision: 15, scale: 2 })
 		.notNull()
 		.default('0'),

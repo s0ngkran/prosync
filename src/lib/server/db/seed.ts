@@ -1054,7 +1054,7 @@ async function seed() {
 
 		const leafPlans = await db.select().from(schema.plans).where(eq(schema.plans.is_leaf_node, true));
 
-		if (leafPlans.length >= 13 && staffSurgeryU && directorU && vendors.length >= 3) {
+		if (leafPlans.length >= 30 && staffSurgeryU && directorU && vendors.length >= 3) {
 			const { randomUUID } = await import('crypto');
 			const now = new Date();
 			const daysAgo = (n: number) => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
@@ -1070,7 +1070,10 @@ async function seed() {
 			const committee2Id = allUsers.find(u => u.email === 'committee2@hospital.go.th')?.id || null;
 			const committee3Id = allUsers.find(u => u.email === 'committee3@hospital.go.th')?.id || null;
 
-			// Reusable step definitions
+			let planIdx = 0;
+			const nextPlan = () => leafPlans[planIdx++];
+
+			// ── Shared helpers ──
 			const makeSteps = (docId: number, approvedUpTo: number) => {
 				const defs = [
 					{ seq: 1, code: 'DIVISION_DRAFT', name: 'แผนกรับผิดชอบ — ร่าง', userId: creatorId },
@@ -1087,7 +1090,6 @@ async function seed() {
 				}));
 			};
 
-			// Bill payload template (specific_lte100k sections, fully filled)
 			const fullBillPayload = {
 				purchase_request: { report_pdf: '/uploads/sample/purchase_request.pdf', report_pdf_name: 'รายงานขอซื้อขอจ้าง.pdf' },
 				quotation: {
@@ -1105,86 +1107,158 @@ async function seed() {
 				inspection_report: { inspection_pdf: '/uploads/sample/inspection.pdf', inspection_pdf_name: 'ใบตรวจรับ.pdf', invoice_pdf: '/uploads/sample/invoice.pdf', invoice_pdf_name: 'ใบแจ้งหนี้.pdf' }
 			};
 
-			// Helper: create a full doc with bidders
-			const createFullDoc = async (planIdx: number, title: string, phase: string, status: string, approvedSteps: number, paymentStatus: string | null) => {
+			const addBidders = async (docId: number, winnerPrice = '85000.00') => {
+				await db.insert(schema.documentBidders).values([
+					{ document_id: docId, vendor_id: vendors[0].id, proposed_price: winnerPrice, is_winner: true, submitted_at: daysAgo(7) },
+					{ document_id: docId, vendor_id: vendors[1].id, proposed_price: '92000.00', is_winner: false, submitted_at: daysAgo(7) },
+					{ document_id: docId, vendor_id: vendors[2].id, proposed_price: '88500.00', is_winner: false, submitted_at: daysAgo(7) }
+				]);
+			};
+
+			const makePaymentRound = (docId: number, status: string, roundNum = 1) => {
+				const pr: any = { document_id: docId, round_number: roundNum, status, current_actor_role: ['BILL_PENDING','BILL_CREATED'].includes(status) ? 'PROCUREMENT' : (['DIRECTOR_APPROVED'].includes(status) ? 'DIRECTOR' : 'FINANCE') };
+				if (!['BILL_PENDING'].includes(status)) { pr.bill_payload = fullBillPayload; pr.bill_created_by = procHeadId; pr.bill_created_at = daysAgo(6); }
+				if (!['BILL_PENDING','BILL_CREATED'].includes(status)) pr.sent_to_finance_at = daysAgo(5);
+				if (!['BILL_PENDING','BILL_CREATED','SENT_TO_FINANCE'].includes(status)) { pr.finance_seen_at = daysAgo(4); pr.finance_seen_by = finHeadId; }
+				if (['PAID','STAMPED'].includes(status)) { pr.check_no = `CHK-2569-${String(docId).padStart(3,'0')}`; pr.check_date = '2026-05-20'; pr.paid_at = daysAgo(1); pr.paid_by = finHeadId; }
+				if (status === 'STAMPED') { pr.stamped_at = now; pr.stamped_by = finHeadId; }
+				return pr;
+			};
+
+			// Generic doc creator
+			const createDoc = async (plan: any, title: string, docType: string, procMethod: string | null, phase: string, docStatus: string, approvedSteps: number, paymentStatus: string | null, opts?: { addBids?: boolean; winnerPrice?: string }) => {
 				const [doc] = await db.insert(schema.documents).values({
-					slug: randomUUID(), agency_id: hospital.id, plan_id: leafPlans[planIdx].id, workflow_id: null,
-					payload: { title }, status, updated_by: creatorId,
-					doc_type: 'type1_nParcel', procurement_method: 'specific_lte100k', phase
+					slug: randomUUID(), agency_id: hospital.id, plan_id: plan.id, workflow_id: null,
+					payload: { title }, status: docStatus, updated_by: creatorId,
+					doc_type: docType, procurement_method: procMethod, phase
 				}).returning();
-				// Approval steps
-				const steps = makeSteps(doc.id, approvedSteps);
-				for (const s of steps) await db.insert(schema.documentApprovalSteps).values(s);
-				// Payment round (only for EXECUTION+)
-				if (paymentStatus) {
-					const prData: any = {
-						document_id: doc.id, round_number: 1, status: paymentStatus,
-						current_actor_role: paymentStatus === 'BILL_PENDING' ? 'PROCUREMENT' : 'FINANCE'
-					};
-					if (['BILL_CREATED','SENT_TO_FINANCE','FINANCE_SEEN','DIKA_CREATED','DIRECTOR_APPROVED','PAID','STAMPED'].includes(paymentStatus)) {
-						prData.bill_payload = fullBillPayload;
-						prData.bill_created_by = procHeadId;
-						prData.bill_created_at = daysAgo(5);
-					}
-					if (['SENT_TO_FINANCE','FINANCE_SEEN','DIKA_CREATED','DIRECTOR_APPROVED','PAID','STAMPED'].includes(paymentStatus)) {
-						prData.sent_to_finance_at = daysAgo(4);
-					}
-					if (['FINANCE_SEEN','DIKA_CREATED','DIRECTOR_APPROVED','PAID','STAMPED'].includes(paymentStatus)) {
-						prData.finance_seen_at = daysAgo(3);
-						prData.finance_seen_by = finHeadId;
-					}
-					if (['PAID','STAMPED'].includes(paymentStatus)) {
-						prData.check_no = 'CHK-2569-001';
-						prData.check_date = '2026-05-20';
-						prData.paid_at = daysAgo(1);
-						prData.paid_by = finHeadId;
-					}
-					if (paymentStatus === 'STAMPED') {
-						prData.stamped_at = now;
-						prData.stamped_by = finHeadId;
-					}
-					await db.insert(schema.paymentRounds).values(prData);
-				}
-				// Bidders (for EXECUTION+ docs)
-				if (phase === 'EXECUTION' || phase === 'COMPLETED') {
-					await db.insert(schema.documentBidders).values([
-						{ document_id: doc.id, vendor_id: vendors[0].id, proposed_price: '85000.00', is_winner: true, submitted_at: daysAgo(7) },
-						{ document_id: doc.id, vendor_id: vendors[1].id, proposed_price: '92000.00', is_winner: false, submitted_at: daysAgo(7) },
-						{ document_id: doc.id, vendor_id: vendors[2].id, proposed_price: '88500.00', is_winner: false, submitted_at: daysAgo(7) }
-					]);
-				}
+				for (const s of makeSteps(doc.id, approvedSteps)) await db.insert(schema.documentApprovalSteps).values(s);
+				if (paymentStatus) await db.insert(schema.paymentRounds).values(makePaymentRound(doc.id, paymentStatus));
+				if (opts?.addBids !== false && (phase === 'EXECUTION' || phase === 'COMPLETED')) await addBidders(doc.id, opts?.winnerPrice);
 				return doc;
 			};
 
-			// ══════════════════════════════════════════
-			// APPROVAL PHASE — 1 document per step
-			// ══════════════════════════════════════════
-			await createFullDoc(0, '① รอแผนกร่างเอกสาร (DIVISION_DRAFT)', 'APPROVAL', 'IN_PROGRESS', 0, null);
-			await createFullDoc(1, '② รอหัวหน้าแผนกอนุมัติ (HEAD_APPROVE)', 'APPROVAL', 'IN_PROGRESS', 1, null);
-			await createFullDoc(2, '③ รอแผนงานตรวจสอบ (PLANNER_CHECK)', 'APPROVAL', 'IN_PROGRESS', 2, null);
-			await createFullDoc(3, '④ รอหัวหน้าแผนงานเสนอ ผอ. (PLANNER_DIRECTOR)', 'APPROVAL', 'IN_PROGRESS', 3, null);
-			await createFullDoc(4, '⑤ รอ ผอ. อนุมัติ (DIRECTOR_APPROVE)', 'APPROVAL', 'IN_PROGRESS', 4, null);
+			// ══════════════════════════════════════════════════════════
+			// TYPE 1: nParcel — ซื้อเครื่องฟอกอากาศ 50 เครื่อง
+			// ตั้งงบครั้งแรก จ่ายครั้งเดียวจบ
+			// Flow: procurement bill → finance → director approve dika → pay → stamp
+			// ══════════════════════════════════════════════════════════
+			console.log('   Seeding type1_nParcel...');
+			await createDoc(nextPlan(), '[T1] รอแผนกร่าง — จัดซื้อเครื่องฟอกอากาศ', 'type1_nParcel', 'specific_lte100k', 'APPROVAL', 'IN_PROGRESS', 0, null);
+			await createDoc(nextPlan(), '[T1] รอหัวหน้าแผนกอนุมัติ', 'type1_nParcel', 'specific_lte100k', 'APPROVAL', 'IN_PROGRESS', 1, null);
+			await createDoc(nextPlan(), '[T1] รอแผนงานตรวจสอบ', 'type1_nParcel', 'specific_lte100k', 'APPROVAL', 'IN_PROGRESS', 2, null);
+			await createDoc(nextPlan(), '[T1] รอหัวหน้าแผนงานเสนอ', 'type1_nParcel', 'specific_lte100k', 'APPROVAL', 'IN_PROGRESS', 3, null);
+			await createDoc(nextPlan(), '[T1] รอ ผอ. อนุมัติ', 'type1_nParcel', 'specific_lte100k', 'APPROVAL', 'IN_PROGRESS', 4, null);
+			await createDoc(nextPlan(), '[T1] รอจัดทำเอกสาร (BILL_PENDING)', 'type1_nParcel', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'BILL_PENDING');
+			await createDoc(nextPlan(), '[T1] จัดทำเอกสารแล้ว (BILL_CREATED)', 'type1_nParcel', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'BILL_CREATED');
+			await createDoc(nextPlan(), '[T1] ส่งการเงินแล้ว (SENT_TO_FINANCE)', 'type1_nParcel', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'SENT_TO_FINANCE');
+			await createDoc(nextPlan(), '[T1] การเงินรับทราบ — พร้อมทำฎีกา', 'type1_nParcel', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'FINANCE_SEEN');
+			await createDoc(nextPlan(), '[T1] สร้างฎีกาแล้ว — รอ ผอ.', 'type1_nParcel', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIKA_CREATED');
+			await createDoc(nextPlan(), '[T1] ผอ. อนุมัติฎีกา — รอจ่าย', 'type1_nParcel', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIRECTOR_APPROVED');
+			await createDoc(nextPlan(), '[T1] จ่ายเงินแล้ว — รอประทับ', 'type1_nParcel', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'PAID');
+			await createDoc(nextPlan(), '[T1] เสร็จสิ้น (STAMPED)', 'type1_nParcel', 'specific_lte100k', 'COMPLETED', 'PAID', 5, 'STAMPED');
 
-			// ══════════════════════════════════════════
-			// EXECUTION PHASE — 1 document per payment status
-			// ══════════════════════════════════════════
-			await createFullDoc(5, '⑥ รอจัดทำเอกสาร (BILL_PENDING)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'BILL_PENDING');
-			await createFullDoc(6, '⑦ จัดทำเอกสารแล้ว (BILL_CREATED)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'BILL_CREATED');
-			await createFullDoc(7, '⑧ ส่งการเงินแล้ว (SENT_TO_FINANCE)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'SENT_TO_FINANCE');
-			await createFullDoc(8, '⑨ การเงินรับทราบ — พร้อมทำฎีกา (FINANCE_SEEN)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'FINANCE_SEEN');
-			await createFullDoc(9, '⑩ สร้างฎีกาแล้ว (DIKA_CREATED)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIKA_CREATED');
-			await createFullDoc(10, '⑪ ผอ. อนุมัติฎีกา (DIRECTOR_APPROVED)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIRECTOR_APPROVED');
-			await createFullDoc(11, '⑫ จ่ายเงินแล้ว (PAID)', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'PAID');
+			// ══════════════════════════════════════════════════════════
+			// TYPE 2: iParcelUtil — ค่าไฟฟ้า
+			// รอบ 1: ผ่าน ผอ. (DIKA_CREATED → DIRECTOR_APPROVED → PAID → STAMPED)
+			// รอบ 2+: ไม่ผ่าน ผอ. (DIKA_CREATED → PAID → STAMPED)
+			// ══════════════════════════════════════════════════════════
+			console.log('   Seeding type2_iParcelUtil...');
+			await createDoc(nextPlan(), '[T2] ค่าไฟฟ้า — รอจัดทำเอกสาร (รอบ 1)', 'type2_iParcelUtil', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'BILL_PENDING');
+			await createDoc(nextPlan(), '[T2] ค่าไฟฟ้า — การเงินรับทราบ (รอบ 1)', 'type2_iParcelUtil', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'FINANCE_SEEN');
+			await createDoc(nextPlan(), '[T2] ค่าไฟฟ้า — สร้างฎีกา รอ ผอ. (รอบ 1)', 'type2_iParcelUtil', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIKA_CREATED');
+			await createDoc(nextPlan(), '[T2] ค่าไฟฟ้า — ผอ. อนุมัติ (รอบ 1)', 'type2_iParcelUtil', 'specific_lte100k', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIRECTOR_APPROVED');
+			// Multi-round: round 1 STAMPED + round 2 in progress (no director)
+			const t2MultiPlan = nextPlan();
+			const [t2MultiDoc] = await db.insert(schema.documents).values({
+				slug: randomUUID(), agency_id: hospital.id, plan_id: t2MultiPlan.id, workflow_id: null,
+				payload: { title: '[T2] ค่าไฟฟ้า — รอบ 2 (ไม่ผ่าน ผอ.)' },
+				status: 'APPROVED_PROCUREMENT', updated_by: creatorId,
+				doc_type: 'type2_iParcelUtil', procurement_method: 'specific_lte100k', phase: 'EXECUTION'
+			}).returning();
+			for (const s of makeSteps(t2MultiDoc.id, 5)) await db.insert(schema.documentApprovalSteps).values(s);
+			await addBidders(t2MultiDoc.id);
+			// Round 1: STAMPED (complete)
+			await db.insert(schema.paymentRounds).values({ ...makePaymentRound(t2MultiDoc.id, 'STAMPED', 1) });
+			// Round 2: FINANCE_SEEN (in progress, no director needed)
+			await db.insert(schema.paymentRounds).values({ ...makePaymentRound(t2MultiDoc.id, 'FINANCE_SEEN', 2) });
 
-			// ══════════════════════════════════════════
-			// COMPLETED — จบครบ
-			// ══════════════════════════════════════════
-			if (leafPlans[12]) await createFullDoc(12, '⑬ ประทับจ่ายแล้ว — เสร็จสิ้น (STAMPED)', 'COMPLETED', 'PAID', 5, 'STAMPED');
+			// ══════════════════════════════════════════════════════════
+			// TYPE 3: iParcel — ค่าซ่อมบำรุง
+			// จ่ายหลายรอบ ผ่าน ผอ. (DIKA_CREATED → DIRECTOR_APPROVED → PAID → STAMPED)
+			// ══════════════════════════════════════════════════════════
+			console.log('   Seeding type3_iParcel...');
+			await createDoc(nextPlan(), '[T3] ซ่อมแอร์ — รอจัดทำเอกสาร', 'type3_iParcel', 'selection', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'BILL_PENDING');
+			await createDoc(nextPlan(), '[T3] ซ่อมแอร์ — การเงินรับทราบ', 'type3_iParcel', 'selection', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'FINANCE_SEEN');
+			await createDoc(nextPlan(), '[T3] ซ่อมแอร์ — สร้างฎีกาแล้ว รอ ผอ.', 'type3_iParcel', 'selection', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIKA_CREATED');
+			await createDoc(nextPlan(), '[T3] ซ่อมแอร์ — ผอ. อนุมัติ รอจ่าย', 'type3_iParcel', 'selection', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIRECTOR_APPROVED');
+			await createDoc(nextPlan(), '[T3] ซ่อมแอร์ — เสร็จรอบ 1 (STAMPED)', 'type3_iParcel', 'selection', 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'STAMPED');
 
-			console.log('✅ V2 Documents seeded — 1 document per workflow stage (13 stages)');
-			console.log('   ①-⑤  APPROVAL phase (5 approval steps)');
-			console.log('   ⑥-⑫  EXECUTION phase (7 payment statuses)');
-			console.log('   ⑬    COMPLETED');
+			// ══════════════════════════════════════════════════════════
+			// TYPE 4: iFinance — ค่าล่วงเวลา
+			// ไม่ผ่านจัดซื้อ ไปการเงินเลย (DIKA_CREATED → DIRECTOR_APPROVED → PAID → STAMPED)
+			// ══════════════════════════════════════════════════════════
+			console.log('   Seeding type4_iFinance...');
+			const t4plan1 = nextPlan();
+			const t4doc1 = await createDoc(t4plan1, '[T4] ค่าล่วงเวลา — สร้างฎีกาเลย', 'type4_iFinance', null, 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIKA_CREATED', { addBids: false });
+			const t4plan2 = nextPlan();
+			const t4doc2 = await createDoc(t4plan2, '[T4] ค่าล่วงเวลา — ผอ. อนุมัติ รอจ่าย', 'type4_iFinance', null, 'EXECUTION', 'APPROVED_PROCUREMENT', 5, 'DIRECTOR_APPROVED', { addBids: false });
+			const t4plan3 = nextPlan();
+			const t4doc3 = await createDoc(t4plan3, '[T4] ค่าล่วงเวลา — เสร็จสิ้น', 'type4_iFinance', null, 'COMPLETED', 'PAID', 5, 'STAMPED', { addBids: false });
+
+			// ══════════════════════════════════════════════════════════
+			// TYPE 5: project — โครงการอบรมพัฒนาบุคลากร
+			// รายการย่อย: type4_iFinance (ยืมเงิน) + type1_nParcel (จัดซื้อ) หลายอัน
+			// ══════════════════════════════════════════════════════════
+			console.log('   Seeding type5_project...');
+			const projPlan = nextPlan();
+			const [projDoc] = await db.insert(schema.documents).values({
+				slug: randomUUID(), agency_id: hospital.id, plan_id: projPlan.id, workflow_id: null,
+				payload: { title: '[T5] โครงการอบรมพัฒนาบุคลากร' },
+				status: 'APPROVED_PROCUREMENT', updated_by: creatorId,
+				doc_type: 'type5_project', procurement_method: null, phase: 'EXECUTION'
+			}).returning();
+			for (const s of makeSteps(projDoc.id, 5)) await db.insert(schema.documentApprovalSteps).values(s);
+
+			// Helper: create child doc for project
+			const createChildDoc = async (title: string, docType: string, procMethod: string | null, payStatus: string, phase: string, docStatus: string, price?: string) => {
+				const cp = nextPlan();
+				const [cd] = await db.insert(schema.documents).values({
+					slug: randomUUID(), agency_id: hospital.id, plan_id: cp.id, workflow_id: null,
+					payload: { title }, status: docStatus, updated_by: creatorId,
+					doc_type: docType, procurement_method: procMethod, phase
+				}).returning();
+				for (const s of makeSteps(cd.id, 5)) await db.insert(schema.documentApprovalSteps).values(s);
+				await db.insert(schema.paymentRounds).values(makePaymentRound(cd.id, payStatus));
+				if (docType !== 'type4_iFinance' && price) await addBidders(cd.id, price);
+				return cd;
+			};
+
+			// ── type4_iFinance children (ค่าตอบแทน/ยืมเงิน — ตรงไปการเงิน) ──
+			const child1 = await createChildDoc('[T5] ค่าสมนาคุณวิทยากร 1', 'type4_iFinance', null, 'DIKA_CREATED', 'EXECUTION', 'APPROVED_PROCUREMENT');
+			const child2 = await createChildDoc('[T5] ค่าเช่าห้องประชุม', 'type4_iFinance', null, 'STAMPED', 'COMPLETED', 'PAID');
+
+			// ── type1_nParcel children (จัดซื้อ — ผ่านจัดซื้อปกติ) ──
+			const child3 = await createChildDoc('[T5] ซื้อปากกาและเครื่องเขียน', 'type1_nParcel', 'specific_lte100k', 'FINANCE_SEEN', 'EXECUTION', 'APPROVED_PROCUREMENT', '12000.00');
+			const child4 = await createChildDoc('[T5] ซื้อเก้าอี้สำนักงาน', 'type1_nParcel', 'specific_lte100k', 'STAMPED', 'COMPLETED', 'PAID', '45000.00');
+			const child5 = await createChildDoc('[T5] ซื้อโปรเจกเตอร์', 'type1_nParcel', 'specific_gt100k', 'BILL_PENDING', 'EXECUTION', 'APPROVED_PROCUREMENT', '80000.00');
+
+			// ── Project items linking to child docs (using real doc_types) ──
+			await db.insert(schema.projectItems).values([
+				{ document_id: projDoc.id, item_name: 'ค่าสมนาคุณวิทยากร (ยืมเงิน)', item_type: 'type4_iFinance', estimated_amount: '50000.00', actual_amount: '0', status: 'IN_PROGRESS', child_document_id: child1.id },
+				{ document_id: projDoc.id, item_name: 'ค่าเช่าห้องประชุม', item_type: 'type4_iFinance', estimated_amount: '15000.00', actual_amount: '15000.00', status: 'COMPLETED', child_document_id: child2.id },
+				{ document_id: projDoc.id, item_name: 'ซื้อปากกาและเครื่องเขียน', item_type: 'type1_nParcel', estimated_amount: '15000.00', actual_amount: '0', status: 'IN_PROGRESS', child_document_id: child3.id },
+				{ document_id: projDoc.id, item_name: 'ซื้อเก้าอี้สำนักงาน', item_type: 'type1_nParcel', estimated_amount: '50000.00', actual_amount: '45000.00', status: 'COMPLETED', child_document_id: child4.id },
+				{ document_id: projDoc.id, item_name: 'ซื้อโปรเจกเตอร์', item_type: 'type1_nParcel', estimated_amount: '85000.00', actual_amount: '0', status: 'IN_PROGRESS', child_document_id: child5.id },
+			]);
+
+			const totalDocs = planIdx + 5; // main docs + 5 child docs
+			console.log(`✅ V2 Documents seeded — ${totalDocs} total across all 5 types`);
+			console.log('   type1_nParcel:    13 docs (approval ①-⑤ + execution ⑥-⑬)');
+			console.log('   type2_iParcelUtil: 6 docs (round 1 ผ่าน ผอ. + multi-round demo)');
+			console.log('   type3_iParcel:     5 docs (execution stages, with director)');
+			console.log('   type4_iFinance:    3 docs (direct to finance, no bill)');
+			console.log('   type5_project:     1 project + 5 child docs (2 type4 + 3 type1)');
 		}
 	} else {
 		console.log('ℹ️  Documents already exist');
@@ -1196,101 +1270,76 @@ async function seed() {
 	const existingDika = await db.select().from(schema.dikaVouchers);
 
 	if (existingDika.length === 0) {
-		const allDocs = await db.select().from(schema.documents);
+		// สร้างฎีกาตาม payment round status จริง
+		// Dika flow: PENDING_EXAMINE → EXAMINED → APPROVED → PAID
+		// Payment round DIKA_CREATED     → dika PENDING_EXAMINE (วางฎีกาแล้ว รอตรวจสอบ)
+		// Payment round DIRECTOR_APPROVED → dika EXAMINED (ตรวจสอบแล้ว) หรือ APPROVED (อนุมัติแล้ว)
+		// Payment round PAID/STAMPED      → dika PAID (จ่ายแล้ว)
 
-		if (allDocs.length > 0 && vendors.length > 0 && bankAccounts.length > 0) {
-			const allUsers = await db.select({ id: schema.users.id, email: schema.users.email }).from(schema.users).where(isNull(schema.users.deleted_at));
-			const dirU = allUsers.find((u) => u.email === 'director@hospital.go.th');
-			const procHdU = allUsers.find((u) => u.email === 'procurement-head@hospital.go.th');
-			const finHdU = allUsers.find((u) => u.email === 'finance-head@hospital.go.th');
+		const dikaStatuses = ['DIKA_CREATED', 'DIRECTOR_APPROVED', 'PAID', 'STAMPED'];
+		const allRounds = await db.select().from(schema.paymentRounds);
+		const dikaRounds = allRounds.filter(r => dikaStatuses.includes(r.status));
 
-			const makeDika = (docId: number, planId: number, vendorIdx: number, status: string, examinerId: number | null, directorId: number | null) => {
-				const vendor = vendors[vendorIdx % vendors.length];
+		if (dikaRounds.length > 0 && vendors.length > 0 && bankAccounts.length > 0) {
+			const allDocs = await db.select().from(schema.documents);
+			const docMap = new Map(allDocs.map(d => [d.id, d]));
+
+			const allUsersForDika = await db.select({ id: schema.users.id, email: schema.users.email }).from(schema.users).where(isNull(schema.users.deleted_at));
+			const dirU = allUsersForDika.find(u => u.email === 'director@hospital.go.th');
+			const finHdU = allUsersForDika.find(u => u.email === 'finance-head@hospital.go.th');
+
+			// Distribute dika statuses evenly to cover all 4 statuses
+			// Group rounds by their status to assign different dika statuses
+			const dikaCreatedRounds = dikaRounds.filter(r => r.status === 'DIKA_CREATED');
+			const dirApprovedRounds = dikaRounds.filter(r => r.status === 'DIRECTOR_APPROVED');
+			const paidRounds = dikaRounds.filter(r => r.status === 'PAID');
+			const stampedRounds = dikaRounds.filter(r => r.status === 'STAMPED');
+
+			const dikaList: any[] = [];
+			const makeDikaEntry = (docId: number, planId: number, vendorIdx: number, dikaStatus: string) => {
 				const grossAmount = randomAmount(10000, 500000);
 				const taxAmount = randomAmount(0, Number(grossAmount) * 0.07);
 				const netAmount = (Number(grossAmount) - Number(taxAmount)).toFixed(2);
 				return {
 					agency_id: hospital.id,
 					document_id: docId,
-					vendor_id: vendor.id,
+					vendor_id: vendors[vendorIdx % vendors.length].id,
 					plan_id: planId,
 					payment_bank_account_id: bankAccounts[0].id,
 					tax_pool_account_id: bankAccounts.length > 1 ? bankAccounts[1].id : null,
-					gross_amount: grossAmount,
-					fine_amount: '0.00',
-					tax_amount: taxAmount,
-					net_amount: netAmount,
-					status,
-					examiner_id: examinerId,
-					director_id: directorId
+					gross_amount: grossAmount, fine_amount: '0.00', tax_amount: taxAmount, net_amount: netAmount,
+					status: dikaStatus,
+					examiner_id: ['EXAMINED','APPROVED','PAID'].includes(dikaStatus) ? (finHdU?.id || null) : null,
+					director_id: ['APPROVED','PAID'].includes(dikaStatus) ? (dirU?.id || null) : null
 				};
 			};
 
-			const dikaList = [];
-
-			// เอกสารที่จบแล้ว (APPROVED_PROCUREMENT) → ฎีกา PAID
-			const completedDocs = allDocs.filter((d) => d.status === 'APPROVED_PROCUREMENT');
-			for (let i = 0; i < completedDocs.length; i++) {
-				dikaList.push(makeDika(completedDocs[i].id, completedDocs[i].plan_id, i, 'PAID', procHdU?.id || null, dirU?.id || null));
+			// DIKA_CREATED payment rounds → dika PENDING_EXAMINE
+			for (const r of dikaCreatedRounds) {
+				const doc = docMap.get(r.document_id);
+				if (doc) dikaList.push(makeDikaEntry(doc.id, doc.plan_id, dikaList.length, 'PENDING_EXAMINE'));
 			}
-
-			// เอกสารที่อยู่ขั้นฎีกา (step 9-12 ของ wf1, step 11-14 ของ wf2)
-			// หาจาก payload ที่มีคำว่า "ฎีกา" หรือ "จ่ายเงิน" ในชื่อ
-			const inProgressDocs = allDocs.filter((d) => d.status === 'IN_PROGRESS');
-			const dikaRelatedDocs = inProgressDocs.filter((d) => {
-				const payload = typeof d.payload === 'string' ? JSON.parse(d.payload) : d.payload;
-				const title = (payload as any)?.title || '';
-				return title.includes('ฎีกา') || title.includes('จ่ายเงิน') || title.includes('ตรวจสอบฎีกา') || title.includes('เบิกจ่าย');
-			});
-
-			// PENDING_EXAMINE — เอกสาร "วางฎีกา" และ "ตรวจสอบฎีกา"
-			const examDocs = dikaRelatedDocs.filter((d) => {
-				const p = typeof d.payload === 'string' ? JSON.parse(d.payload) : d.payload;
-				return ((p as any)?.title || '').includes('วางฎีกา') || ((p as any)?.title || '').includes('ตรวจสอบฎีกา');
-			});
-			for (let i = 0; i < examDocs.length; i++) {
-				dikaList.push(makeDika(examDocs[i].id, examDocs[i].plan_id, i, 'PENDING_EXAMINE', null, null));
+			// DIRECTOR_APPROVED payment rounds → split: half EXAMINED, half APPROVED
+			for (let i = 0; i < dirApprovedRounds.length; i++) {
+				const doc = docMap.get(dirApprovedRounds[i].document_id);
+				if (doc) dikaList.push(makeDikaEntry(doc.id, doc.plan_id, dikaList.length, i % 2 === 0 ? 'EXAMINED' : 'APPROVED'));
 			}
-
-			// EXAMINED — เอกสาร "อนุมัติเบิกจ่าย"
-			const approveDocs = dikaRelatedDocs.filter((d) => {
-				const p = typeof d.payload === 'string' ? JSON.parse(d.payload) : d.payload;
-				return ((p as any)?.title || '').includes('รออนุมัติเบิกจ่าย');
-			});
-			for (let i = 0; i < approveDocs.length; i++) {
-				dikaList.push(makeDika(approveDocs[i].id, approveDocs[i].plan_id, i + examDocs.length, 'EXAMINED', procHdU?.id || null, null));
+			// PAID payment rounds → dika APPROVED (รออนุมัติจ่ายเงิน)
+			for (const r of paidRounds) {
+				const doc = docMap.get(r.document_id);
+				if (doc) dikaList.push(makeDikaEntry(doc.id, doc.plan_id, dikaList.length, 'APPROVED'));
 			}
-
-			// APPROVED — เอกสาร "รอจ่ายเงิน"
-			const payDocs = dikaRelatedDocs.filter((d) => {
-				const p = typeof d.payload === 'string' ? JSON.parse(d.payload) : d.payload;
-				return ((p as any)?.title || '').includes('รอจ่ายเงิน');
-			});
-			for (let i = 0; i < payDocs.length; i++) {
-				dikaList.push(makeDika(payDocs[i].id, payDocs[i].plan_id, i + examDocs.length + approveDocs.length, 'APPROVED', procHdU?.id || null, dirU?.id || null));
+			// STAMPED payment rounds → dika PAID
+			for (const r of stampedRounds) {
+				const doc = docMap.get(r.document_id);
+				if (doc) dikaList.push(makeDikaEntry(doc.id, doc.plan_id, dikaList.length, 'PAID'));
 			}
 
 			if (dikaList.length > 0) {
 				await db.insert(schema.dikaVouchers).values(dikaList);
-
-				// สร้าง notifications สำหรับฎีกาที่ยังไม่จบ
-				const notifs = [];
-				for (const d of dikaList) {
-					if (d.status === 'PENDING_EXAMINE' && finHdU) {
-						notifs.push({ user_id: finHdU.id, document_id: d.document_id, step_id: null, title: 'ฎีการอตรวจสอบ', message: `ฎีกาเบิกจ่ายสำหรับเอกสาร #${d.document_id} รอการตรวจสอบ (${d.net_amount} บาท)`, action_url: '/finance', notification_type: 'APPROVAL_REQUIRED', is_read: false });
-					}
-					if (d.status === 'EXAMINED' && dirU) {
-						notifs.push({ user_id: dirU.id, document_id: d.document_id, step_id: null, title: 'ฎีการออนุมัติเบิกจ่าย', message: `ฎีกาเบิกจ่ายสำหรับเอกสาร #${d.document_id} รอการอนุมัติ (${d.net_amount} บาท)`, action_url: '/finance', notification_type: 'APPROVAL_REQUIRED', is_read: false });
-					}
-					if (d.status === 'APPROVED' && finHdU) {
-						notifs.push({ user_id: finHdU.id, document_id: d.document_id, step_id: null, title: 'ฎีการอจ่ายเงิน', message: `ฎีกาเบิกจ่ายสำหรับเอกสาร #${d.document_id} ได้รับอนุมัติแล้ว — รอจ่ายเงิน (${d.net_amount} บาท)`, action_url: '/finance', notification_type: 'APPROVAL_REQUIRED', is_read: false });
-					}
-				}
-				if (notifs.length > 0) await db.insert(schema.notifications).values(notifs);
-
-				const counts = { PAID: completedDocs.length, PENDING_EXAMINE: examDocs.length, EXAMINED: approveDocs.length, APPROVED: payDocs.length };
-				console.log(`✅ Dika Vouchers seeded (${dikaList.length} total — PAID:${counts.PAID}, PENDING_EXAMINE:${counts.PENDING_EXAMINE}, EXAMINED:${counts.EXAMINED}, APPROVED:${counts.APPROVED})`);
-				console.log(`✅ Dika notifications seeded (${notifs.length})`);
+				const counts: Record<string, number> = {};
+				for (const d of dikaList) counts[d.status] = (counts[d.status] || 0) + 1;
+				console.log(`✅ Dika Vouchers seeded (${dikaList.length} total — ${Object.entries(counts).map(([k,v]) => `${k}:${v}`).join(', ')})`);
 			}
 		}
 	} else {

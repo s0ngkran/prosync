@@ -44,17 +44,30 @@ const STATUS_FLOWS: Record<string, string[]> = {
 export type PaymentRoundStatus = string;
 
 /**
- * Get the valid status flow for a document type
+ * Get the valid status flow for a document type.
+ * For type2_iParcelUtil: round 1 (or undefined) includes DIRECTOR_APPROVED; round 2+ skips it.
  */
-export function getStatusFlow(docType: string): string[] {
-	return STATUS_FLOWS[docType] ?? STATUS_FLOWS.type1_nParcel;
+export function getStatusFlow(docType: string, roundNumber?: number): string[] {
+	const flow = STATUS_FLOWS[docType] ?? STATUS_FLOWS.type1_nParcel;
+
+	// type2_iParcelUtil: round 1 needs director approval, subsequent rounds skip it
+	if (docType === 'type2_iParcelUtil') {
+		if (roundNumber === undefined || roundNumber <= 1) {
+			// Round 1 or unspecified: include DIRECTOR_APPROVED (insert before PAID)
+			const paidIdx = flow.indexOf('PAID');
+			return [...flow.slice(0, paidIdx), 'DIRECTOR_APPROVED', ...flow.slice(paidIdx)];
+		}
+		// Round 2+: use the default flow (no DIRECTOR_APPROVED)
+	}
+
+	return flow;
 }
 
 /**
  * Get the next valid status for a payment round
  */
-export function getNextStatus(docType: string, currentStatus: string): string | null {
-	const flow = getStatusFlow(docType);
+export function getNextStatus(docType: string, currentStatus: string, roundNumber?: number): string | null {
+	const flow = getStatusFlow(docType, roundNumber);
 	const idx = flow.indexOf(currentStatus);
 	if (idx === -1 || idx >= flow.length - 1) return null;
 	return flow[idx + 1];
@@ -63,8 +76,8 @@ export function getNextStatus(docType: string, currentStatus: string): string | 
 /**
  * Check if a status transition is valid
  */
-export function isValidTransition(docType: string, from: string, to: string): boolean {
-	const flow = getStatusFlow(docType);
+export function isValidTransition(docType: string, from: string, to: string, roundNumber?: number): boolean {
+	const flow = getStatusFlow(docType, roundNumber);
 	const fromIdx = flow.indexOf(from);
 	const toIdx = flow.indexOf(to);
 	return fromIdx !== -1 && toIdx === fromIdx + 1;
@@ -125,7 +138,7 @@ export async function createNextPaymentRound(documentId: number, docType: string
 	const maxRound = Math.max(0, ...existingRounds.map((r) => r.round_number));
 	const nextRoundNumber = maxRound + 1;
 
-	const flow = getStatusFlow(docType);
+	const flow = getStatusFlow(docType, nextRoundNumber);
 	const initialStatus = flow[0];
 
 	const [round] = await db
@@ -166,7 +179,7 @@ export async function advancePaymentRound(
 
 	if (!round) throw new Error('ไม่พบรอบการจ่ายเงิน');
 
-	const nextStatus = getNextStatus(docType, round.status);
+	const nextStatus = getNextStatus(docType, round.status, round.round_number);
 	if (!nextStatus) throw new Error('รอบนี้อยู่ในสถานะสุดท้ายแล้ว');
 
 	const now = new Date();

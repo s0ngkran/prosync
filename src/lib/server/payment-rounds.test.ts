@@ -17,8 +17,22 @@ describe('getStatusFlow', () => {
 		]);
 	});
 
-	it('returns flow without DIRECTOR_APPROVED for type2_iParcelUtil', () => {
+	it('returns flow with DIRECTOR_APPROVED for type2_iParcelUtil (no round, backward compat)', () => {
 		const flow = getStatusFlow('type2_iParcelUtil');
+		expect(flow).toContain('DIRECTOR_APPROVED');
+		expect(flow).toContain('PAID');
+	});
+
+	it('returns flow with DIRECTOR_APPROVED for type2_iParcelUtil round 1', () => {
+		const flow = getStatusFlow('type2_iParcelUtil', 1);
+		expect(flow).toContain('DIRECTOR_APPROVED');
+		const dirIdx = flow.indexOf('DIRECTOR_APPROVED');
+		const paidIdx = flow.indexOf('PAID');
+		expect(dirIdx).toBeLessThan(paidIdx);
+	});
+
+	it('returns flow without DIRECTOR_APPROVED for type2_iParcelUtil round 2+', () => {
+		const flow = getStatusFlow('type2_iParcelUtil', 2);
 		expect(flow).not.toContain('DIRECTOR_APPROVED');
 		expect(flow).toContain('PAID');
 	});
@@ -55,8 +69,17 @@ describe('getNextStatus', () => {
 		expect(getNextStatus('type1_nParcel', 'NONEXISTENT')).toBeNull();
 	});
 
-	it('skips DIRECTOR_APPROVED for type2', () => {
-		expect(getNextStatus('type2_iParcelUtil', 'DIKA_CREATED')).toBe('PAID');
+	it('includes DIRECTOR_APPROVED for type2 round 1 (default)', () => {
+		expect(getNextStatus('type2_iParcelUtil', 'DIKA_CREATED')).toBe('DIRECTOR_APPROVED');
+	});
+
+	it('includes DIRECTOR_APPROVED for type2 round 1 (explicit)', () => {
+		expect(getNextStatus('type2_iParcelUtil', 'DIKA_CREATED', 1)).toBe('DIRECTOR_APPROVED');
+	});
+
+	it('skips DIRECTOR_APPROVED for type2 round 2+', () => {
+		expect(getNextStatus('type2_iParcelUtil', 'DIKA_CREATED', 2)).toBe('PAID');
+		expect(getNextStatus('type2_iParcelUtil', 'DIKA_CREATED', 3)).toBe('PAID');
 	});
 
 	it('includes DIRECTOR_APPROVED for type3', () => {

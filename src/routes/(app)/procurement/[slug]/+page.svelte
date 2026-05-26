@@ -450,9 +450,11 @@
 						</div>
 						<div>
 							<label class="mb-1 block text-xs font-medium" style="color: var(--color-slate-600)">ประเภท</label>
-							<select name="item_type" required class="w-full rounded-lg px-3 py-2 text-sm" style="border: 1px solid var(--color-slate-200)">
-								<option value="pFinance">pFinance (ยืมเงิน)</option>
-								<option value="pParcel">pParcel (จัดซื้อ)</option>
+							<select name="item_type" required class="w-full rounded-lg px-3 py-2 text-sm" style="border: 1px solid oklch(0.85 0.02 180)">
+								<option value="type4_iFinance">ค่าตอบแทน/ยืมเงิน (ไม่ผ่านจัดซื้อ)</option>
+								<option value="type1_nParcel">จัดซื้อจัดจ้าง — ครั้งเดียว</option>
+								<option value="type2_iParcelUtil">ค่าสาธารณูปโภค — หลายรอบ</option>
+								<option value="type3_iParcel">ค่าซ่อมบำรุง — หลายรอบ</option>
 							</select>
 						</div>
 						<div>
@@ -466,15 +468,24 @@
 				</form>
 			{/if}
 			{#each data.projectItems as item}
-				<div class="mb-2 flex items-center gap-3 rounded-lg p-3" style="background: white; border: 1px solid var(--color-slate-200)">
+				{@const isFinance = item.item_type === 'type4_iFinance'}
+				{@const badgeChar = isFinance ? 'F' : item.item_type === 'type1_nParcel' ? '1' : item.item_type === 'type2_iParcelUtil' ? '2' : '3'}
+				{@const badgeBg = isFinance ? 'oklch(0.94 0.08 85)' : 'oklch(0.93 0.06 240)'}
+				{@const badgeColor = isFinance ? 'oklch(0.45 0.12 85)' : 'oklch(0.45 0.12 240)'}
+				{@const typeLabel = isFinance ? 'ตรงการเงิน' : item.item_type === 'type1_nParcel' ? 'ซื้อครั้งเดียว' : item.item_type === 'type2_iParcelUtil' ? 'หลายรอบ (ไม่ผ่าน ผอ.)' : 'หลายรอบ (ผ่าน ผอ.)'}
+				<div class="mb-2 flex items-center gap-3 rounded-lg p-3" style="background: oklch(0.99 0.005 180); border: 1px solid oklch(0.88 0.02 180)">
 					<div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[0.625rem] font-bold"
-						style="background: {item.item_type === 'pFinance' ? 'oklch(0.94 0.08 85)' : 'oklch(0.93 0.06 240)'}; color: {item.item_type === 'pFinance' ? 'oklch(0.45 0.12 85)' : 'oklch(0.45 0.12 240)'}">
-						{item.item_type === 'pFinance' ? 'F' : 'P'}
+						style="background: {badgeBg}; color: {badgeColor}">
+						{badgeChar}
 					</div>
 					<div class="min-w-0 flex-1">
-						<span class="text-sm font-medium" style="color: oklch(0.25 0.02 180)">{item.item_name}</span>
+						{#if item.child_doc_slug}
+							<a href="/procurement/{item.child_doc_slug}" class="text-sm font-medium hover:underline" style="color: oklch(0.42 0.14 240)">{item.item_name}</a>
+						{:else}
+							<span class="text-sm font-medium" style="color: oklch(0.25 0.02 180)">{item.item_name}</span>
+						{/if}
 						<span class="ml-2 text-xs" style="color: oklch(0.55 0.02 180)">
-							{item.item_type === 'pFinance' ? 'ยืมเงิน' : 'จัดซื้อ'} | งบ: {Number(item.estimated_amount).toLocaleString()} บาท
+							{typeLabel} | งบ: {Number(item.estimated_amount).toLocaleString()} บาท
 						</span>
 					</div>
 					<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[0.625rem] font-medium"

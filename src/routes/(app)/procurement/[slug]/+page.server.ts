@@ -15,7 +15,7 @@ import {
 	bankAccounts,
 	agencies
 } from '$lib/server/db/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, sql } from 'drizzle-orm';
 import { writeAuditLog } from '$lib/server/db/audit';
 import {
 	addCommitteeSchema,
@@ -77,10 +77,28 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			.from(paymentRoundsTable)
 			.where(eq(paymentRoundsTable.document_id, docId));
 		if (doc.doc_type === 'type5_project') {
-			docProjectItems = await db
+			const items = await db
 				.select()
 				.from(projectItems)
 				.where(eq(projectItems.document_id, docId));
+			// Load child document slugs for items that have child_document_id
+			const childDocIds = items
+				.map((i: any) => i.child_document_id)
+				.filter((id: any): id is number => id != null);
+			let childSlugMap: Record<number, string> = {};
+			if (childDocIds.length > 0) {
+				const childDocs = await db
+					.select({ id: documents.id, slug: documents.slug })
+					.from(documents)
+					.where(sql`${documents.id} IN (${sql.join(childDocIds.map((id: number) => sql`${id}`), sql`, `)})`);
+				for (const cd of childDocs) {
+					childSlugMap[cd.id] = cd.slug;
+				}
+			}
+			docProjectItems = items.map((item: any) => ({
+				...item,
+				child_doc_slug: item.child_document_id ? childSlugMap[item.child_document_id] || null : null
+			}));
 		}
 	}
 
@@ -895,7 +913,7 @@ export const actions: Actions = {
 		const item_type = form.get('item_type') as string;
 		const estimated_amount = form.get('estimated_amount') as string;
 
-		if (!item_name || !item_type || !['pFinance', 'pParcel'].includes(item_type)) {
+		if (!item_name || !item_type || !['type4_iFinance', 'type1_nParcel', 'type2_iParcelUtil', 'type3_iParcel'].includes(item_type)) {
 			return fail(400, { success: false, errors: { item: ['กรุณาระบุข้อมูลให้ครบ'] } });
 		}
 
